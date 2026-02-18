@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rds-diagnostics-tool"
+version = "0.1.0"
+description = "RDS Diagnostics and Reporting Tool for DBM teams"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "boto3>=1.26.0",
+    "botocore>=1.29.0",
+    "click>=8.1.0",
+    "pydantic>=2.0.0",
+    "python-dateutil>=2.8.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-mock>=3.11.0",
+    "hypothesis>=6.82.0",
+    "moto>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.0.280",
+]
+
+[project.scripts]
+rds-tool = "cli.main:cli"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 100
+target-version = ["py38", "py39", "py310", "py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
