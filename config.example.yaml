@@ -1,0 +1,86 @@
+# RDS Diagnostics Tool - Example Configuration File
+# Copy this file to ~/.rds-diagnostics/config.yaml or specify with --config flag
+
+# AWS Profile (optional)
+# If not specified, uses the default AWS CLI profile
+# aws_profile: lt-prd
+
+# Default AWS Region
+# Default: ap-southeast-1 (Singapore)
+default_region: ap-southeast-1
+
+# Default Time Range for Metrics Collection
+# Format: <number><h|d> where h=hours, d=days
+# Examples: "1h" (1 hour), "24h" (24 hours), "7d" (7 days)
+# Default: 1h
+default_time_range: 1h
+
+# Default Output Format
+# Options: text, json
+# Default: text
+output_format: text
+
+# Metric Thresholds
+# These values determine when metrics are flagged as warnings or critical
+# All percentage values should be between 0-100
+thresholds:
+  # CPU Utilization (percentage)
+  cpu:
+    warning: 70.0    # Warn when CPU exceeds 70%
+    critical: 90.0   # Critical when CPU exceeds 90%
+  
+  # Memory Utilization (percentage of freeable memory)
+  memory:
+    warning: 80.0    # Warn when memory usage exceeds 80%
+    critical: 95.0   # Critical when memory usage exceeds 95%
+  
+  # Database Connections (percentage of max_connections)
+  connections:
+    warning: 80      # Warn when connections exceed 80% of max
+    critical: 95     # Critical when connections exceed 95% of max
+  
+  # IOPS (percentage of provisioned IOPS)
+  iops:
+    warning: 80.0    # Warn when IOPS usage exceeds 80%
+    critical: 95.0   # Critical when IOPS usage exceeds 95%
+  
+  # Storage (percentage of allocated storage used)
+  storage:
+    warning: 80.0    # Warn when storage usage exceeds 80%
+    critical: 90.0   # Critical when storage usage exceeds 90%
+
+# Account-Specific Settings (optional)
+# Define custom settings for specific AWS accounts
+# Uncomment and customize as needed
+#
+# accounts:
+#   lt-prd:
+#     profile: lt-prd
+#     region: ap-southeast-1
+#     thresholds:
+#       cpu:
+#         warning: 60.0
+#         critical: 85.0
+#   
+#   dm-prd:
+#     profile: dm-prd
+#     region: ap-southeast-1
+#     thresholds:
+#       memory:
+#         warning: 85.0
+#         critical: 95.0
+#   
+#   sp-uat:
+#     profile: sp-uat
+#     region: us-east-1
+
+# Usage Examples:
+#
+# 1. Use this config file:
+#    rds-diag --config config.yaml list
+#
+# 2. Override settings from command line:
+#    rds-diag --config config.yaml --region us-east-1 list
+#
+# 3. Use default config location (~/.rds-diagnostics/config.yaml):
+#    rds-diag list

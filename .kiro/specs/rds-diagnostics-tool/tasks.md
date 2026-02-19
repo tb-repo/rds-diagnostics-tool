@@ -208,8 +208,8 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Test that no violations result in Normal severity
     - _Requirements: 5.4_
 
-- [ ] 8. Implement reporting engine
-  - [ ] 8.1 Create TechnicalReportFormatter
+- [x] 8. Implement reporting engine
+  - [x] 8.1 Create TechnicalReportFormatter
     - Implement format() to generate text-based technical reports
     - Implement format_json() to generate JSON technical reports
     - Include all CloudWatch metrics with timestamps and values
@@ -219,7 +219,7 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Create structured sections for readability
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
   
-  - [ ] 8.2 Create ManagementReportFormatter
+  - [x] 8.2 Create ManagementReportFormatter
     - Implement format() to generate management reports
     - Implement create_executive_summary() for high-level overview
     - Implement format_key_findings() to highlight critical issues
@@ -228,7 +228,7 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Keep report concise and business-friendly
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
   
-  - [ ] 8.3 Create ReportGenerator orchestrator
+  - [x] 8.3 Create ReportGenerator orchestrator
     - Implement generate_report() to route to appropriate formatter
     - Handle both technical and management report types
     - Support both text and JSON output formats
@@ -259,11 +259,11 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - **Validates: Requirements 5.3**
     - Test that management reports use percentages/trends and are concise
 
-- [ ] 9. Checkpoint - Ensure all tests pass
+- [x] 9. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Implement application core orchestration
-  - [ ] 10.1 Create RDSDiagnosticsApp class
+- [x] 10. Implement application core orchestration
+  - [x] 10.1 Create RDSDiagnosticsApp class
     - Implement __init__() to initialize with configuration and AWS clients
     - Implement list_instances() to orchestrate instance discovery
     - Implement run_diagnostics() to orchestrate full diagnostic workflow
@@ -282,81 +282,119 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - **Validates: Requirements 8.7**
     - Test that exceptions are logged with details
 
-- [ ] 11. Implement CLI interface
-  - [ ] 11.1 Create CLI command structure with Click
+- [x] 11. Implement CLI interface
+  - [x] 11.1 Create main CLI entry point with Click framework
+    - Create cli/main.py with Click-based CLI group
     - Implement main CLI group with global options (--profile, --region, --config, --verbose)
-    - Implement 'list' command to list RDS instances
-    - Implement 'diagnose' command to run diagnostics
-    - Implement 'report' command to generate formatted reports
-    - Add --help documentation for all commands and options
-    - Support both short and long option formats
-    - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.6_
+    - Add --help documentation for the main command
+    - Support both short (-p, -r, -c, -v) and long (--profile, --region, --config, --verbose) option formats
+    - _Requirements: 10.1, 10.2, 10.4, 10.6_
   
-  - [ ] 11.2 Implement argument parsing and validation
-    - Validate required parameters for each command
-    - Validate instance IDs, time ranges, regions, profiles
-    - Provide clear error messages for invalid inputs
-    - Suggest correct usage patterns for invalid commands
-    - _Requirements: 8.6, 10.3, 10.7_
+  - [x] 11.2 Implement 'list' command
+    - Create 'list' subcommand to display all RDS instances in a region
+    - Accept --profile and --region options
+    - Display instance ID, engine type, status, and instance class in formatted output
+    - Handle errors gracefully (authentication failures, no instances found)
+    - _Requirements: 1.1, 1.2, 10.2_
   
-  - [ ] 11.3 Implement output handling
-    - Display reports to stdout when no output file specified
-    - Write reports to files when output path specified
+  - [x] 11.3 Implement 'diagnose' command
+    - Create 'diagnose' subcommand to run diagnostics on a specific instance
+    - Accept required --instance option and optional --time-range option
+    - Display diagnostic summary to stdout
+    - Validate instance ID and time range format
+    - _Requirements: 1.3, 2.6, 2.7, 8.6, 10.2, 10.3_
+  
+  - [x] 11.4 Implement 'report' command
+    - Create 'report' subcommand to generate formatted reports
+    - Accept --instance (required), --time-range, --report-type (technical/management), --format (text/json), --output options
+    - Default to technical report in text format to stdout
+    - Validate all input parameters before execution
+    - _Requirements: 4.1, 4.5, 5.1, 9.1, 9.2, 9.5, 9.6, 10.2, 10.3_
+  
+  - [x] 11.5 Implement output file handling
+    - Write reports to files when --output path is specified
     - Create parent directories if they don't exist
-    - Handle file write errors gracefully
-    - _Requirements: 9.1, 9.2, 9.3_
+    - Prompt for confirmation before overwriting existing files (or add --force flag)
+    - Handle file write errors with clear error messages
+    - Display reports to stdout when no output file specified
+    - _Requirements: 9.1, 9.2, 9.3, 9.4_
   
-  - [ ] 11.4 Implement verbose mode
+  - [x] 11.6 Implement verbose mode
     - Add progress information when --verbose is enabled
-    - Show detailed AWS API call information
-    - Display collection progress for metrics
+    - Show AWS API call details (which APIs are being called)
+    - Display metric collection progress
+    - Show timing information for each phase
     - _Requirements: 10.5_
   
-  - [ ] 11.5 Wire CLI to application core
-    - Connect CLI commands to RDSDiagnosticsApp methods
-    - Pass parsed arguments to configuration
+  - [x] 11.7 Implement input validation and error handling
+    - Validate instance IDs (format and existence)
+    - Validate time ranges (format: "1h", "24h", "7d")
+    - Validate regions (must be valid AWS region)
+    - Validate AWS profiles (must exist in AWS CLI config)
+    - Provide clear error messages for invalid inputs with examples
+    - Suggest correct usage patterns for invalid command combinations
+    - _Requirements: 8.6, 10.3, 10.7_
+  
+  - [x] 11.8 Wire CLI to application core
+    - Connect all CLI commands to RDSDiagnosticsApp methods
+    - Initialize Configuration from CLI arguments and config file
+    - Initialize AWSClientFactory with selected profile and region
     - Handle application exceptions and display user-friendly errors
+    - Ensure proper error message formatting for all error types
     - _Requirements: All (integration)_
   
-  - [ ]* 11.6 Write property test for CLI option equivalence
+  - [ ]* 11.9 Write property test for CLI option equivalence
     - **Property 26: CLI Option Equivalence**
     - **Validates: Requirements 10.4**
-    - Test that short and long options produce identical behavior
+    - Test that short (-p) and long (--profile) options produce identical behavior
+    - Test with multiple option pairs: -p/--profile, -r/--region, -i/--instance, -t/--time-range, -f/--format, -o/--output
   
-  - [ ]* 11.7 Write property test for missing required parameter handling
+  - [ ]* 11.10 Write property test for missing required parameter handling
     - **Property 27: Missing Required Parameter Handling**
     - **Validates: Requirements 10.3**
-    - Test that missing parameters produce error messages
+    - Test that missing --instance parameter produces error message with usage hints
+    - Test that error message suggests correct usage pattern
   
-  - [ ]* 11.8 Write property test for verbose mode output enhancement
+  - [ ]* 11.11 Write property test for verbose mode output enhancement
     - **Property 28: Verbose Mode Output Enhancement**
     - **Validates: Requirements 10.5**
-    - Test that verbose mode adds additional output
+    - Test that verbose mode adds progress information and API call details
+    - Test that output with --verbose is longer than without --verbose
   
-  - [ ]* 11.9 Write property test for invalid command suggestion
+  - [ ]* 11.12 Write property test for invalid command suggestion
     - **Property 29: Invalid Command Suggestion**
     - **Validates: Requirements 10.7**
-    - Test that invalid commands provide suggestions
+    - Test that invalid commands provide suggestions for correct usage
+    - Test that incompatible option combinations suggest valid alternatives
   
-  - [ ]* 11.10 Write property test for file output with directory creation
+  - [ ]* 11.13 Write property test for file output with directory creation
     - **Property 25: File Output with Directory Creation**
     - **Validates: Requirements 9.1, 9.3**
-    - Test that parent directories are created
+    - Test that parent directories are created when writing output files
+    - Test with nested directory paths that don't exist
   
-  - [ ]* 11.11 Write property test for input validation
+  - [ ]* 11.14 Write property test for input validation
     - **Property 23: Input Validation**
     - **Validates: Requirements 8.6**
-    - Test that invalid inputs produce clear errors
+    - Test that invalid instance IDs produce clear error messages
+    - Test that invalid time ranges produce error messages with format examples
+    - Test that invalid regions produce error messages with valid region list
   
-  - [ ]* 11.12 Write unit test for help documentation
+  - [ ]* 11.15 Write unit test for help documentation
     - **Example 5: Help Documentation**
-    - Test that --help displays comprehensive documentation
+    - Test that --help displays comprehensive documentation with all commands and options
+    - Test that help includes usage examples
     - _Requirements: 10.1_
   
-  - [ ]* 11.13 Write unit test for standard output default
+  - [ ]* 11.16 Write unit test for standard output default
     - **Example 4: Standard Output Default**
-    - Test that no output file displays to stdout
+    - Test that no --output option displays report to stdout
     - _Requirements: 9.2_
+  
+  - [ ]* 11.17 Write unit test for file overwrite confirmation
+    - Test that attempting to overwrite existing file prompts for confirmation
+    - Test that --force flag bypasses confirmation
+    - _Requirements: 9.4_
 
 - [ ] 12. Add permission validation
   - [ ] 12.1 Implement permission checking
@@ -369,21 +407,68 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - **Validates: Requirements 6.5**
     - Test that permission checks identify missing permissions
 
-- [ ] 13. Create example configuration file and documentation
-  - Create example config.yaml with all settings documented
-  - Create README.md with installation instructions
-  - Document CLI usage with examples
-  - Document required IAM permissions
-  - Add troubleshooting guide for common errors
-  - _Requirements: 7.1, 10.1, 10.6_
+- [x] 13. Create CLI entry point and packaging
+  - [x] 13.1 Create CLI entry point script
+    - Add console_scripts entry point in pyproject.toml for 'rds-diag' command
+    - Create main entry point function that calls CLI
+    - Ensure proper exception handling at the top level
+    - _Requirements: 10.1, 10.2_
+  
+  - [x] 13.2 Create example configuration file
+    - Create example config.yaml with all settings documented
+    - Include comments explaining each configuration option
+    - Include examples for all threshold settings
+    - Include examples for account-specific settings
+    - _Requirements: 7.1, 7.2_
+  
+  - [x] 13.3 Create comprehensive documentation
+    - Create or update README.md with installation instructions
+    - Document all CLI commands with examples
+    - Document required IAM permissions with example policy
+    - Add troubleshooting guide for common errors (authentication, permissions, rate limiting)
+    - Document configuration file format and options
+    - Add examples for common use cases (list instances, run diagnostics, generate reports)
+    - _Requirements: 10.1, 10.6, 6.5, 6.6_
 
-- [ ] 14. Final checkpoint - Integration testing
-  - Run end-to-end tests with mocked AWS responses
-  - Test all CLI commands with various option combinations
-  - Verify all 29 correctness properties pass
-  - Verify all example test cases pass
-  - Ensure code coverage meets goals (>90% line coverage)
-  - Ensure all tests pass, ask the user if questions arise.
+- [ ] 14. Final checkpoint - Integration testing and validation
+  - [ ] 14.1 Run end-to-end integration tests
+    - Test 'list' command with mocked AWS responses
+    - Test 'diagnose' command with complete workflow
+    - Test 'report' command with both technical and management report types
+    - Test with various option combinations (different regions, profiles, time ranges)
+    - Test error scenarios (invalid credentials, missing permissions, instance not found)
+    - _Requirements: All (integration)_
+  
+  - [ ] 14.2 Verify property-based test coverage
+    - Ensure all 29 correctness properties have corresponding property tests
+    - Run all property tests with minimum 100 iterations each
+    - Verify all property tests pass
+    - _Requirements: All (correctness validation)_
+  
+  - [ ] 14.3 Verify example test coverage
+    - Ensure all 5 example test cases have corresponding unit tests
+    - Verify all example tests pass
+    - _Requirements: 2.7, 6.2, 7.2, 9.2, 10.1_
+  
+  - [ ] 14.4 Verify code coverage goals
+    - Run pytest with coverage reporting
+    - Ensure line coverage > 90%
+    - Ensure branch coverage > 85%
+    - Identify and test any uncovered code paths
+    - _Requirements: All (quality assurance)_
+  
+  - [ ] 14.5 Manual testing with real AWS account (optional)
+    - Test against real RDS instances in a test AWS account
+    - Verify CloudWatch metrics collection works correctly
+    - Verify Performance Insights data collection (if enabled)
+    - Verify report generation produces expected output
+    - Test with multiple AWS profiles and regions
+    - _Requirements: All (real-world validation)_
+  
+  - [ ] 14.6 Final checkpoint
+    - Ensure all tests pass
+    - Verify all documentation is complete
+    - Ask the user if questions arise or if ready for release
 
 ## Notes
 

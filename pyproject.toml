@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-rds-tool = "cli.main:cli"
+rds-diag = "cli.main:cli"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
