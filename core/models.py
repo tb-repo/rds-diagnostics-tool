@@ -222,6 +222,22 @@ class WaitEvent:
     wait_count: int
 
 
+@dataclass
+class TopDatabase:
+    """Top database by load from Performance Insights."""
+    database_name: str
+    total_load: float
+    load_percentage: float
+
+
+@dataclass
+class TopUser:
+    """Top user by load from Performance Insights."""
+    user_name: str
+    total_load: float
+    load_percentage: float
+
+
 # Analysis Results
 @dataclass
 class Violation:
@@ -260,6 +276,8 @@ class DiagnosticData:
     cloudwatch_metrics: CloudWatchMetrics
     performance_insights_queries: Optional[List[SQLQuery]]
     wait_events: Optional[List[WaitEvent]]
+    top_databases: Optional[List["TopDatabase"]]
+    top_users: Optional[List["TopUser"]]
     analysis: MetricAnalysis
     recommendations: List[str]
     collection_timestamp: datetime

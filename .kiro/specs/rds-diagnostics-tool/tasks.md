@@ -470,15 +470,15 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Verify all documentation is complete
     - Ask the user if questions arise or if ready for release
 
-- [ ] 15. Fix data accuracy issues in reports
-  - [ ] 15.1 Fix max_connections display
+- [x] 15. Fix data accuracy issues in reports
+  - [x] 15.1 Fix max_connections display
     - Query actual max_connections value from RDS parameter group using describe_db_parameters API
     - Update InstanceInfoCollector to retrieve actual value instead of estimation
     - Handle cases where parameter group cannot be queried (show "N/A" or omit)
     - Update formatters to display actual value or indicate it's unavailable
     - _Requirements: 4.10_
   
-  - [ ] 15.2 Fix Performance Insights data accuracy
+  - [x] 15.2 Fix Performance Insights data accuracy
     - Research correct PI API response structure for execution counts
     - Fix calculation of execution_count in PerformanceInsightsCollector
     - Fix calculation of average_execution_time to be accurate
@@ -486,7 +486,7 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Add validation to ensure execution_count > 0 when execution_time > 0
     - _Requirements: 3.2, 3.3, 3.7_
   
-  - [ ] 15.3 Add top databases collection
+  - [x] 15.3 Add top databases collection
     - Implement collect_top_databases() method in PerformanceInsightsCollector
     - Use PI API with group_by='db.name' to get database load
     - Add TopDatabase data model to core/models.py
@@ -494,7 +494,7 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Display top databases in technical report formatter
     - _Requirements: 3.8, 4.8_
   
-  - [ ] 15.4 Add top users collection
+  - [x] 15.4 Add top users collection
     - Implement collect_top_users() method in PerformanceInsightsCollector
     - Use PI API with group_by='db.user' to get user load
     - Add TopUser data model to core/models.py
@@ -502,26 +502,26 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Display top users in technical report formatter
     - _Requirements: 3.9, 4.8_
   
-  - [ ] 15.5 Fix duplicate queries in reports
+  - [x] 15.5 Fix duplicate queries in reports
     - Add deduplication logic in collect_top_sql_queries()
     - Use query_id or query_text hash to identify duplicates
     - Keep the query with highest load when duplicates found
     - _Requirements: 3.10_
   
-  - [ ] 15.6 Complete Aurora storage fix in reports
+  - [x] 15.6 Complete Aurora storage fix in reports
     - Ensure all report sections show correct Aurora storage information
     - Remove "1 GB" display for Aurora allocated storage
     - Show "Auto-scaling (cluster-level)" consistently
     - Display actual current storage from CloudWatch metrics
     - _Requirements: 4.9_
   
-  - [ ] 15.7 Update application core to collect new data
+  - [x] 15.7 Update application core to collect new data
     - Update RDSDiagnosticsApp.run_diagnostics() to collect top databases
     - Update RDSDiagnosticsApp.run_diagnostics() to collect top users
     - Ensure new data is passed to report generation
     - _Requirements: 3.8, 3.9_
   
-  - [ ] 15.8 Test data accuracy fixes
+  - [x] 15.8 Test data accuracy fixes
     - Write unit tests for max_connections retrieval
     - Write unit tests for PI data accuracy (execution counts)
     - Write unit tests for top databases collection

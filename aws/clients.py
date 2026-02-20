@@ -266,6 +266,57 @@ class RDSClient(BaseAWSClient):
             )
         
         return resource_id
+    
+    def get_db_parameter_value(
+        self,
+        parameter_group_name: str,
+        parameter_name: str
+    ) -> Optional[str]:
+        """
+        Get a specific parameter value from a DB parameter group.
+        
+        Args:
+            parameter_group_name: Name of the parameter group
+            parameter_name: Name of the parameter to retrieve
+            
+        Returns:
+            Parameter value as string, or None if not found
+        """
+        try:
+            response = self._execute_with_retry(
+                'describe_db_parameters',
+                DBParameterGroupName=parameter_group_name,
+                Source='user'
+            )
+            
+            # Search for the parameter
+            for param in response.get('Parameters', []):
+                if param.get('ParameterName') == parameter_name:
+                    return param.get('ParameterValue')
+            
+            # If not found in user parameters, check system defaults
+            response = self._execute_with_retry(
+                'describe_db_parameters',
+                DBParameterGroupName=parameter_group_name
+            )
+            
+            for param in response.get('Parameters', []):
+                if param.get('ParameterName') == parameter_name:
+                    return param.get('ParameterValue')
+            
+            return None
+            
+        except AWSClientError:
+            logger.warning(
+                f"Failed to retrieve parameter {parameter_name} "
+                f"from group {parameter_group_name}"
+            )
+            return None
+        except Exception as e:
+            logger.warning(
+                f"Unexpected error retrieving parameter: {str(e)}"
+            )
+            return None
 
 
 class CloudWatchClient(BaseAWSClient):

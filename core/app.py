@@ -120,6 +120,8 @@ class RDSDiagnosticsApp:
             logger.info("Checking Performance Insights availability...")
             pi_queries = None
             wait_events = None
+            top_databases = None
+            top_users = None
             
             if self.pi_collector.is_performance_insights_enabled(instance_id):
                 logger.info("Collecting Performance Insights data...")
@@ -129,6 +131,14 @@ class RDSDiagnosticsApp:
                         time_range
                     )
                     wait_events = self.pi_collector.collect_wait_events(
+                        instance_id,
+                        time_range
+                    )
+                    top_databases = self.pi_collector.collect_top_databases(
+                        instance_id,
+                        time_range
+                    )
+                    top_users = self.pi_collector.collect_top_users(
                         instance_id,
                         time_range
                     )
@@ -155,6 +165,8 @@ class RDSDiagnosticsApp:
                 cloudwatch_metrics=cloudwatch_metrics,
                 performance_insights_queries=pi_queries,
                 wait_events=wait_events,
+                top_databases=top_databases,
+                top_users=top_users,
                 analysis=analysis,
                 recommendations=recommendations,
                 collection_timestamp=cloudwatch_metrics.collection_time

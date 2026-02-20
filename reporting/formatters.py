@@ -50,10 +50,16 @@ class TechnicalReportFormatter:
         # Handle Aurora vs standard RDS storage display
         if 'aurora' in inst.engine.lower():
             lines.append(f"Allocated Storage: Auto-scaling (cluster-level)")
-            lines.append(f"Max Connections:   {inst.max_connections} (estimated)")
+            if inst.max_connections > 0:
+                lines.append(f"Max Connections:   {inst.max_connections}")
+            else:
+                lines.append(f"Max Connections:   Dynamic (formula-based)")
         else:
             lines.append(f"Allocated Storage: {inst.allocated_storage} GB")
-            lines.append(f"Max Connections:   {inst.max_connections}")
+            if inst.max_connections > 0:
+                lines.append(f"Max Connections:   {inst.max_connections}")
+            else:
+                lines.append(f"Max Connections:   Not available")
         
         lines.append(f"Availability Zone: {inst.availability_zone}")
         lines.append("")
@@ -188,11 +194,13 @@ class TechnicalReportFormatter:
         if diagnostic_data.performance_insights_queries:
             lines.append("TOP SQL QUERIES (Performance Insights)")
             lines.append("-" * 80)
+            lines.append("Note: Values represent database load (Average Active Sessions)")
+            lines.append("")
             for i, query in enumerate(diagnostic_data.performance_insights_queries[:10], 1):
                 lines.append(f"{i}. Query ID: {query.query_id}")
-                lines.append(f"   Total Execution Time: {query.total_execution_time:.2f}s")
-                lines.append(f"   Average Execution Time: {query.average_execution_time:.4f}s")
-                lines.append(f"   Execution Count: {query.execution_count}")
+                lines.append(f"   Total Load: {query.total_execution_time:.2f} AAS")
+                lines.append(f"   Average Load: {query.average_execution_time:.4f} AAS")
+                lines.append(f"   Time Samples: {query.execution_count}")
                 if query.wait_events:
                     lines.append(f"   Wait Events: {', '.join(query.wait_events)}")
                 # Truncate long queries
@@ -213,6 +221,26 @@ class TechnicalReportFormatter:
                 lines.append(f"• {event.event_name}")
                 lines.append(f"  Total Wait Time: {event.total_wait_time:.2f}s")
                 lines.append(f"  Wait Count: {event.wait_count}")
+                lines.append("")
+        
+        # Top Databases
+        if diagnostic_data.top_databases:
+            lines.append("TOP DATABASES BY LOAD")
+            lines.append("-" * 80)
+            for i, db in enumerate(diagnostic_data.top_databases[:10], 1):
+                lines.append(f"{i}. {db.database_name}")
+                lines.append(f"   Total Load: {db.total_load:.2f} AAS")
+                lines.append(f"   Load %: {db.load_percentage:.1f}%")
+                lines.append("")
+        
+        # Top Users
+        if diagnostic_data.top_users:
+            lines.append("TOP USERS BY LOAD")
+            lines.append("-" * 80)
+            for i, user in enumerate(diagnostic_data.top_users[:10], 1):
+                lines.append(f"{i}. {user.user_name}")
+                lines.append(f"   Total Load: {user.total_load:.2f} AAS")
+                lines.append(f"   Load %: {user.load_percentage:.1f}%")
                 lines.append("")
         
         # Recommendations
@@ -300,16 +328,33 @@ class TechnicalReportFormatter:
             },
             "performance_insights": {
                 "available": diagnostic_data.performance_insights_queries is not None,
+                "note": "Load values represent Average Active Sessions (AAS), not execution time",
                 "top_queries": [
                     {
                         "query_id": q.query_id,
-                        "total_execution_time": q.total_execution_time,
-                        "average_execution_time": q.average_execution_time,
-                        "execution_count": q.execution_count,
+                        "total_load_aas": q.total_execution_time,
+                        "average_load_aas": q.average_execution_time,
+                        "time_samples": q.execution_count,
                         "query_text": q.query_text,
                         "wait_events": q.wait_events
                     }
                     for q in (diagnostic_data.performance_insights_queries or [])
+                ],
+                "top_databases": [
+                    {
+                        "database_name": db.database_name,
+                        "total_load_aas": db.total_load,
+                        "load_percentage": db.load_percentage
+                    }
+                    for db in (diagnostic_data.top_databases or [])
+                ],
+                "top_users": [
+                    {
+                        "user_name": u.user_name,
+                        "total_load_aas": u.total_load,
+                        "load_percentage": u.load_percentage
+                    }
+                    for u in (diagnostic_data.top_users or [])
                 ]
             },
             "recommendations": diagnostic_data.recommendations

@@ -131,6 +131,8 @@ class TestIntegrationSmoke:
             cloudwatch_metrics=metrics,
             performance_insights_queries=None,
             wait_events=None,
+            top_databases=None,
+            top_users=None,
             analysis=analysis,
             recommendations=["Continue monitoring"],
             collection_timestamp=now

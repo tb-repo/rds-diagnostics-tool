@@ -90,33 +90,53 @@ class InstanceInfoCollector:
     
     def _get_max_connections(self, instance_data: dict) -> int:
         """
-        Estimate max_connections based on instance class.
-        
-        This is an approximation since the actual value depends on
-        the parameter group configuration.
+        Get actual max_connections value from parameter group.
         
         Args:
             instance_data: Raw instance data from AWS API
             
         Returns:
-            Estimated max connections
+            Actual max connections from parameter group, or 0 if unavailable
         """
-        # Try to get from endpoint if available
-        # Otherwise estimate based on instance class
-        instance_class = instance_data.get('DBInstanceClass', '')
-        
-        # Basic estimation based on common patterns
-        # In production, this should query the parameter group
-        if 'micro' in instance_class or 't2.micro' in instance_class:
-            return 66
-        elif 't2.small' in instance_class or 't3.small' in instance_class:
-            return 150
-        elif 't2.medium' in instance_class or 't3.medium' in instance_class:
-            return 296
-        elif 'large' in instance_class:
-            return 1000
-        elif 'xlarge' in instance_class:
-            return 2000
-        else:
-            # Default conservative estimate
-            return 500
+        try:
+            # Get parameter group name
+            param_groups = instance_data.get('DBParameterGroups', [])
+            if not param_groups:
+                logger.warning("No parameter groups found for instance")
+                return 0
+            
+            param_group_name = param_groups[0].get('DBParameterGroupName')
+            if not param_group_name:
+                logger.warning("Parameter group name not found")
+                return 0
+            
+            # Query max_connections parameter
+            max_conn_value = self.rds_client.get_db_parameter_value(
+                parameter_group_name=param_group_name,
+                parameter_name='max_connections'
+            )
+            
+            if max_conn_value:
+                # Handle formula-based values (e.g., "{DBInstanceClassMemory/12582880}")
+                if '{' in max_conn_value:
+                    # For Aurora and some RDS engines, max_connections is calculated
+                    # We'll return 0 to indicate it's dynamic
+                    logger.info(
+                        f"max_connections uses formula: {max_conn_value}"
+                    )
+                    return 0
+                
+                try:
+                    return int(max_conn_value)
+                except ValueError:
+                    logger.warning(
+                        f"Could not parse max_connections value: {max_conn_value}"
+                    )
+                    return 0
+            else:
+                logger.warning("max_connections parameter not found")
+                return 0
+                
+        except Exception as e:
+            logger.warning(f"Failed to get max_connections: {str(e)}")
+            return 0

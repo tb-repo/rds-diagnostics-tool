@@ -158,6 +158,8 @@ class TestDiagnoseCommand:
             cloudwatch_metrics=mock_metrics,
             performance_insights_queries=None,
             wait_events=None,
+            top_databases=None,
+            top_users=None,
             analysis=MetricAnalysis(
                 violations=[],
                 trends=[],
@@ -206,6 +208,8 @@ class TestDiagnoseCommand:
             cloudwatch_metrics=mock_metrics,
             performance_insights_queries=None,
             wait_events=None,
+            top_databases=None,
+            top_users=None,
             analysis=MetricAnalysis(
                 violations=[],
                 trends=[],
