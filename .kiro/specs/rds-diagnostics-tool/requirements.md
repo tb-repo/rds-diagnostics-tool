@@ -59,6 +59,9 @@ The RDS Diagnostics and Reporting Tool is a command-line utility designed to hel
 5. IF Performance Insights is not enabled, THEN THE RDS_Tool SHALL inform the user and continue with available metrics
 6. WHERE a time range is specified, THE RDS_Tool SHALL retrieve Performance Insights data for that period
 7. WHEN retrieving query data, THE RDS_Tool SHALL include query execution counts and row counts where available
+8. WHEN retrieving Performance Insights data, THE RDS_Tool SHALL retrieve top databases by database load
+9. WHEN retrieving Performance Insights data, THE RDS_Tool SHALL retrieve top users by database load
+10. WHEN retrieving Performance Insights data, THE RDS_Tool SHALL deduplicate queries to avoid showing the same query multiple times
 
 ### Requirement 4: Report Generation for Technical Audiences
 
@@ -73,6 +76,9 @@ The RDS Diagnostics and Reporting Tool is a command-line utility designed to hel
 5. WHERE the user specifies JSON output format, THE RDS_Tool SHALL generate the report in valid JSON format
 6. WHEN metrics exceed Metric_Threshold values, THE RDS_Tool SHALL highlight these in the technical report
 7. WHEN generating a technical report, THE RDS_Tool SHALL include RDS instance configuration details (instance class, engine version, storage type)
+8. WHEN generating a technical report, THE RDS_Tool SHALL include top databases and top users from Performance Insights data
+9. WHEN generating a technical report for Aurora instances, THE RDS_Tool SHALL display actual storage usage from CloudWatch metrics instead of allocated storage API value
+10. WHEN generating a technical report, THE RDS_Tool SHALL query actual max_connections value from parameter group or omit if unavailable
 
 ### Requirement 5: Report Generation for Management Audiences
 

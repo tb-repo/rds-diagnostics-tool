@@ -196,6 +196,18 @@ class PerformanceInsightsCollector:
         time_range: TimeRange
     ) -> List[WaitEvent]
     
+    def collect_top_databases(
+        instance_id: str,
+        time_range: TimeRange,
+        limit: int = 10
+    ) -> List[TopDatabase]
+    
+    def collect_top_users(
+        instance_id: str,
+        time_range: TimeRange,
+        limit: int = 10
+    ) -> List[TopUser]
+    
     def is_performance_insights_enabled(instance_id: str) -> bool
 
 class InstanceInfoCollector:
@@ -334,6 +346,18 @@ class WaitEvent:
     wait_count: int
 
 @dataclass
+class TopDatabase:
+    database_name: str
+    total_load: float
+    load_percentage: float
+
+@dataclass
+class TopUser:
+    user_name: str
+    total_load: float
+    load_percentage: float
+
+@dataclass
 class Violation:
     metric_name: str
     severity: Severity
@@ -362,6 +386,8 @@ class DiagnosticData:
     cloudwatch_metrics: CloudWatchMetrics
     performance_insights_queries: Optional[List[SQLQuery]]
     wait_events: Optional[List[WaitEvent]]
+    top_databases: Optional[List[TopDatabase]]
+    top_users: Optional[List[TopUser]]
     analysis: MetricAnalysis
     recommendations: List[str]
     collection_timestamp: datetime

@@ -46,23 +46,26 @@ class TimeRange:
         """
         Parse duration string and create TimeRange.
         
-        Supported formats: "1h", "24h", "7d", "30d"
+        Supported formats: "15m", "1h", "24h", "7d", "30d"
         """
-        pattern = r"^(\d+)([hd])$"
+        pattern = r"^(\d+)([mhd])$"
         match = re.match(pattern, duration_str.lower())
         
         if not match:
             raise ValueError(
                 f"Invalid duration format: {duration_str}. "
-                "Expected format: <number><h|d> (e.g., '1h', '24h', '7d')"
+                "Expected format: <number><m|h|d> (e.g., '15m', '1h', '24h', '7d')"
             )
         
         value = int(match.group(1))
         unit = match.group(2)
         
-        end = datetime.now()
+        # Use UTC time to match AWS API expectations
+        end = datetime.utcnow()
         
-        if unit == "h":
+        if unit == "m":
+            start = end - timedelta(minutes=value)
+        elif unit == "h":
             start = end - timedelta(hours=value)
         elif unit == "d":
             start = end - timedelta(days=value)

@@ -46,8 +46,15 @@ class TechnicalReportFormatter:
         lines.append(f"Instance Class:    {inst.instance_class}")
         lines.append(f"Status:            {inst.status}")
         lines.append(f"Storage Type:      {inst.storage_type}")
-        lines.append(f"Allocated Storage: {inst.allocated_storage} GB")
-        lines.append(f"Max Connections:   {inst.max_connections}")
+        
+        # Handle Aurora vs standard RDS storage display
+        if 'aurora' in inst.engine.lower():
+            lines.append(f"Allocated Storage: Auto-scaling (cluster-level)")
+            lines.append(f"Max Connections:   {inst.max_connections} (estimated)")
+        else:
+            lines.append(f"Allocated Storage: {inst.allocated_storage} GB")
+            lines.append(f"Max Connections:   {inst.max_connections}")
+        
         lines.append(f"Availability Zone: {inst.availability_zone}")
         lines.append("")
         
@@ -141,13 +148,31 @@ class TechnicalReportFormatter:
         # Storage
         storage = metrics.storage
         lines.append(f"Storage:")
-        usage_pct = storage.get_usage_percentage()
-        lines.append(f"  Total Allocated: {storage.total_storage / (1024**3):.2f} GB")
-        lines.append(f"  Usage: {usage_pct:.1f}%")
-        if storage.free_storage.data_points:
-            latest_free = storage.free_storage.get_latest()
-            if latest_free:
-                lines.append(f"  Free: {latest_free.value / (1024**3):.2f} GB")
+        
+        # Handle Aurora vs standard RDS storage
+        if 'aurora' in inst.engine.lower():
+            lines.append(f"  Type: Auto-scaling cluster storage")
+            if storage.free_storage.data_points:
+                latest_free = storage.free_storage.get_latest()
+                latest_used = storage.used_storage.get_latest()
+                if latest_free and latest_used:
+                    total_gb = (latest_free.value + latest_used.value) / (1024**3)
+                    used_gb = latest_used.value / (1024**3)
+                    free_gb = latest_free.value / (1024**3)
+                    usage_pct = (used_gb / total_gb * 100) if total_gb > 0 else 0
+                    lines.append(f"  Current Total: {total_gb:.2f} GB")
+                    lines.append(f"  Used: {used_gb:.2f} GB ({usage_pct:.1f}%)")
+                    lines.append(f"  Free: {free_gb:.2f} GB")
+            else:
+                lines.append(f"  No storage metrics available")
+        else:
+            usage_pct = storage.get_usage_percentage()
+            lines.append(f"  Total Allocated: {storage.total_storage / (1024**3):.2f} GB")
+            lines.append(f"  Usage: {usage_pct:.1f}%")
+            if storage.free_storage.data_points:
+                latest_free = storage.free_storage.get_latest()
+                if latest_free:
+                    lines.append(f"  Free: {latest_free.value / (1024**3):.2f} GB")
         lines.append("")
         
         # Trends

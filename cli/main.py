@@ -328,7 +328,7 @@ def diagnose(ctx, instance, time_range):
         except ValueError as e:
             click.echo(f"\nERROR: {e}", err=True)
             click.echo(
-                "\nSupported formats: <number><h|d> (e.g., '1h', '24h', '7d')",
+                "\nSupported formats: <number><m|h|d> (e.g., '15m', '1h', '24h', '7d')",
                 err=True
             )
             ctx.exit(EXIT_ERROR)
@@ -356,7 +356,13 @@ def diagnose(ctx, instance, time_range):
         click.echo(f"  Engine: {info.engine} {info.engine_version}")
         click.echo(f"  Instance Class: {info.instance_class}")
         click.echo(f"  Status: {info.status}")
-        click.echo(f"  Storage: {info.storage_type} ({info.allocated_storage} GB)")
+        
+        # Display storage appropriately for Aurora vs standard RDS
+        if 'aurora' in info.engine.lower():
+            click.echo(f"  Storage: {info.storage_type} (Auto-scaling cluster storage)")
+        else:
+            click.echo(f"  Storage: {info.storage_type} ({info.allocated_storage} GB)")
+        
         click.echo(f"  Availability Zone: {info.availability_zone}")
         
         # Overall severity
@@ -491,7 +497,7 @@ def report(ctx, instance, time_range, report_type, format, output, force):
         except ValueError as e:
             click.echo(f"\nERROR: {e}", err=True)
             click.echo(
-                "\nSupported formats: <number><h|d> (e.g., '1h', '24h', '7d')",
+                "\nSupported formats: <number><m|h|d> (e.g., '15m', '1h', '24h', '7d')",
                 err=True
             )
             ctx.exit(EXIT_ERROR)
@@ -537,11 +543,11 @@ def report(ctx, instance, time_range, report_type, format, output, force):
             output_path = Path(output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Write to file with secure permissions
+            # Write to file with secure permissions and UTF-8 encoding
             try:
                 # Create file with owner-only permissions (0o600)
                 output_path.touch(mode=0o600, exist_ok=True)
-                with open(output_path, 'w') as f:
+                with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(generated_report.content)
                 click.echo(f"\n✓ Report saved to: {output}")
             except IOError as e:
@@ -559,6 +565,95 @@ def report(ctx, instance, time_range, report_type, format, output, force):
         handle_aws_error(e, config, instance, ctx)
     except Exception as e:
         click.echo(f"\nERROR: Unexpected error: {e}", err=True)
+        if verbose:
+            import traceback
+            click.echo(traceback.format_exc(), err=True)
+        ctx.exit(EXIT_ERROR)
+
+
+
+@cli.command()
+@click.pass_context
+def check_permissions(ctx):
+    """
+    Check IAM permissions for RDS diagnostics operations.
+    
+    Validates that the configured AWS profile has the required permissions
+    to run diagnostics and generate reports.
+    
+    Examples:
+    
+      # Check permissions for default profile
+      rds-diag check-permissions
+      
+      # Check permissions for specific profile
+      rds-diag check-permissions --profile lt-prd
+    """
+    from aws.permissions import PermissionValidator
+    import json
+    
+    config = ctx.obj['config']
+    verbose = ctx.obj['verbose']
+    
+    click.echo("Checking IAM permissions...\n")
+    
+    if verbose:
+        click.echo(f"Profile: {config.aws_profile or 'default'}")
+        click.echo(f"Region: {config.default_region}\n")
+    
+    try:
+        validator = PermissionValidator(
+            profile=config.aws_profile,
+            region=config.default_region
+        )
+        
+        results = validator.validate_all_permissions()
+        
+        # Display results
+        click.echo("Permission Check Results:")
+        click.echo("=" * 80)
+        
+        for check in results['checks']:
+            service = check['service']
+            required = "REQUIRED" if check['required'] else "OPTIONAL"
+            status = "✓ PASS" if check['has_permission'] else "✗ FAIL"
+            
+            click.echo(f"\n{service} ({required}): {status}")
+            
+            if not check['has_permission'] and check['missing']:
+                click.echo("  Missing permissions:")
+                for perm in check['missing']:
+                    click.echo(f"    - {perm}")
+        
+        click.echo("\n" + "=" * 80)
+        
+        # Summary
+        if results['has_required_permissions']:
+            click.echo("\n✓ All required permissions are present")
+            click.echo("  You can run diagnostics and generate reports")
+            
+            if results['missing_optional']:
+                click.echo("\n⚠️  Some optional permissions are missing:")
+                for perm in results['missing_optional']:
+                    click.echo(f"    - {perm}")
+                click.echo("\n  Performance Insights data will not be available")
+        else:
+            click.echo("\n✗ Missing required permissions")
+            click.echo("  The following permissions are required:")
+            for perm in results['missing_required']:
+                click.echo(f"    - {perm}")
+            
+            click.echo("\n  To fix this, attach the following IAM policy to your user/role:")
+            click.echo("\n" + json.dumps(validator.get_required_permissions_policy(), indent=2))
+            
+            ctx.exit(EXIT_ERROR)
+        
+        if verbose:
+            click.echo("\nDetailed Results:")
+            click.echo(json.dumps(results, indent=2))
+    
+    except Exception as e:
+        click.echo(f"\n✗ ERROR: Failed to check permissions: {e}", err=True)
         if verbose:
             import traceback
             click.echo(traceback.format_exc(), err=True)

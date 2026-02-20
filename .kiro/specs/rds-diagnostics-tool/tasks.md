@@ -396,8 +396,8 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Test that --force flag bypasses confirmation
     - _Requirements: 9.4_
 
-- [ ] 12. Add permission validation
-  - [ ] 12.1 Implement permission checking
+- [x] 12. Add permission validation
+  - [x] 12.1 Implement permission checking
     - Check for required IAM permissions (RDS describe, CloudWatch get metrics, PI access)
     - Report specific missing permissions when detected
     - _Requirements: 6.5, 6.6_
@@ -430,8 +430,8 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Add examples for common use cases (list instances, run diagnostics, generate reports)
     - _Requirements: 10.1, 10.6, 6.5, 6.6_
 
-- [ ] 14. Final checkpoint - Integration testing and validation
-  - [ ] 14.1 Run end-to-end integration tests
+- [-] 14. Final checkpoint - Integration testing and validation
+  - [x] 14.1 Run end-to-end integration tests
     - Test 'list' command with mocked AWS responses
     - Test 'diagnose' command with complete workflow
     - Test 'report' command with both technical and management report types
@@ -439,25 +439,25 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Test error scenarios (invalid credentials, missing permissions, instance not found)
     - _Requirements: All (integration)_
   
-  - [ ] 14.2 Verify property-based test coverage
+  - [ ]\* 14.2 Verify property-based test coverage
     - Ensure all 29 correctness properties have corresponding property tests
     - Run all property tests with minimum 100 iterations each
     - Verify all property tests pass
     - _Requirements: All (correctness validation)_
   
-  - [ ] 14.3 Verify example test coverage
+  - [ ]\* 14.3 Verify example test coverage
     - Ensure all 5 example test cases have corresponding unit tests
     - Verify all example tests pass
     - _Requirements: 2.7, 6.2, 7.2, 9.2, 10.1_
   
-  - [ ] 14.4 Verify code coverage goals
+  - [x] 14.4 Verify code coverage goals
     - Run pytest with coverage reporting
     - Ensure line coverage > 90%
     - Ensure branch coverage > 85%
     - Identify and test any uncovered code paths
     - _Requirements: All (quality assurance)_
   
-  - [ ] 14.5 Manual testing with real AWS account (optional)
+  - [ ]\* 14.5 Manual testing with real AWS account (optional)
     - Test against real RDS instances in a test AWS account
     - Verify CloudWatch metrics collection works correctly
     - Verify Performance Insights data collection (if enabled)
@@ -465,10 +465,70 @@ The implementation uses Python with boto3 for AWS integration, Hypothesis for pr
     - Test with multiple AWS profiles and regions
     - _Requirements: All (real-world validation)_
   
-  - [ ] 14.6 Final checkpoint
+  - [x] 14.6 Final checkpoint
     - Ensure all tests pass
     - Verify all documentation is complete
     - Ask the user if questions arise or if ready for release
+
+- [ ] 15. Fix data accuracy issues in reports
+  - [ ] 15.1 Fix max_connections display
+    - Query actual max_connections value from RDS parameter group using describe_db_parameters API
+    - Update InstanceInfoCollector to retrieve actual value instead of estimation
+    - Handle cases where parameter group cannot be queried (show "N/A" or omit)
+    - Update formatters to display actual value or indicate it's unavailable
+    - _Requirements: 4.10_
+  
+  - [ ] 15.2 Fix Performance Insights data accuracy
+    - Research correct PI API response structure for execution counts
+    - Fix calculation of execution_count in PerformanceInsightsCollector
+    - Fix calculation of average_execution_time to be accurate
+    - Ensure total_execution_time, average_execution_time, and execution_count are consistent
+    - Add validation to ensure execution_count > 0 when execution_time > 0
+    - _Requirements: 3.2, 3.3, 3.7_
+  
+  - [ ] 15.3 Add top databases collection
+    - Implement collect_top_databases() method in PerformanceInsightsCollector
+    - Use PI API with group_by='db.name' to get database load
+    - Add TopDatabase data model to core/models.py
+    - Update DiagnosticData to include top_databases field
+    - Display top databases in technical report formatter
+    - _Requirements: 3.8, 4.8_
+  
+  - [ ] 15.4 Add top users collection
+    - Implement collect_top_users() method in PerformanceInsightsCollector
+    - Use PI API with group_by='db.user' to get user load
+    - Add TopUser data model to core/models.py
+    - Update DiagnosticData to include top_users field
+    - Display top users in technical report formatter
+    - _Requirements: 3.9, 4.8_
+  
+  - [ ] 15.5 Fix duplicate queries in reports
+    - Add deduplication logic in collect_top_sql_queries()
+    - Use query_id or query_text hash to identify duplicates
+    - Keep the query with highest load when duplicates found
+    - _Requirements: 3.10_
+  
+  - [ ] 15.6 Complete Aurora storage fix in reports
+    - Ensure all report sections show correct Aurora storage information
+    - Remove "1 GB" display for Aurora allocated storage
+    - Show "Auto-scaling (cluster-level)" consistently
+    - Display actual current storage from CloudWatch metrics
+    - _Requirements: 4.9_
+  
+  - [ ] 15.7 Update application core to collect new data
+    - Update RDSDiagnosticsApp.run_diagnostics() to collect top databases
+    - Update RDSDiagnosticsApp.run_diagnostics() to collect top users
+    - Ensure new data is passed to report generation
+    - _Requirements: 3.8, 3.9_
+  
+  - [ ] 15.8 Test data accuracy fixes
+    - Write unit tests for max_connections retrieval
+    - Write unit tests for PI data accuracy (execution counts)
+    - Write unit tests for top databases collection
+    - Write unit tests for top users collection
+    - Write unit tests for query deduplication
+    - Verify all tests pass
+    - _Requirements: 3.2, 3.3, 3.7, 3.8, 3.9, 3.10, 4.8, 4.9, 4.10_
 
 ## Notes
 
