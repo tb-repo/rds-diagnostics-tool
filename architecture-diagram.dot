@@ -1,0 +1,171 @@
+digraph RDSDiagnosticsTool {
+    // Graph attributes
+    rankdir=TB;
+    splines=ortho;
+    nodesep=0.8;
+    ranksep=1.2;
+    bgcolor="white";
+    fontname="Arial";
+    fontsize=14;
+    
+    // Node defaults
+    node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, margin=0.3];
+    edge [fontname="Arial", fontsize=10, color="#666666"];
+    
+    // User layer
+    subgraph cluster_user {
+        label="User Layer";
+        style=filled;
+        color="#E8F4F8";
+        fontsize=12;
+        fontname="Arial Bold";
+        
+        user [label="Database Administrator", shape=ellipse, fillcolor="#4A90E2", fontcolor=white, width=2];
+    }
+    
+    // CLI Layer
+    subgraph cluster_cli {
+        label="CLI Layer";
+        style=filled;
+        color="#FFF4E6";
+        fontsize=12;
+        fontname="Arial Bold";
+        
+        cli [label="Click CLI\n(main.py)\n\nCommands:\n• list\n• diagnose\n• report\n• check-permissions", fillcolor="#FFB84D", width=2.5];
+        batch [label="Batch Scripts\n(Windows)", fillcolor="#FFD699", width=1.8];
+    }
+    
+    // Application Core
+    subgraph cluster_core {
+        label="Application Core";
+        style=filled;
+        color="#F0F8FF";
+        fontsize=12;
+        fontname="Arial Bold";
+        
+        app [label="RDSDiagnosticsApp\n(Orchestrator)", fillcolor="#5DADE2", fontcolor=white, width=2.2];
+        config [label="Configuration\nManagement", fillcolor="#85C1E9", width=1.8];
+        models [label="Data Models\n(Pydantic v2)", fillcolor="#85C1E9", width=1.8];
+    }
+    
+    // AWS Client Layer
+    subgraph cluster_aws_clients {
+        label="AWS Client Layer (boto3)";
+        style=filled;
+        color="#E8F8F5";
+        fontsize=12;
+        fontname="Arial Bold";
+        
+        client_factory [label="AWSClientFactory", fillcolor="#48C9B0", width=1.8];
+        rds_client [label="RDS Client", fillcolor="#76D7C4", width=1.5];
+        cw_client [label="CloudWatch Client", fillcolor="#76D7C4", width=1.5];
+        pi_client [label="Performance Insights\nClient", fillcolor="#76D7C4", width=1.5];
+    }
+    
+    // AWS Services
+    subgraph cluster_aws_services {
+        label="AWS Services";
+        style=filled;
+        color="#FEF5E7";
+        fontsize=12;
+        fontname="Arial Bold";
+        
+        iam [label="AWS IAM\n(Authentication)", fillcolor="#F39C12", fontcolor=white, width=1.8];
+        rds [label="Amazon RDS\n(Instance Metadata)", fillcolor="#FF9900", fontcolor=white, width=2];
+        cloudwatch [label="Amazon CloudWatch\n(Metrics)", fillcolor="#FF9900", fontcolor=white, width=2];
+        pi [label="AWS Performance\nInsights", fillcolor="#FF9900", fontcolor=white, width=2];
+    }
+    
+    // Data Collectors
+    subgraph cluster_collectors {
+        label="Data Collectors";
+        style=filled;
+        color="#F4ECF7";
+        fontsize=12;
+        fontname="Arial Bold";
+        
+        inst_collector [label="Instance Info\nCollector", fillcolor="#AF7AC5", fontcolor=white, width=1.8];
+        metrics_collector [label="Metrics\nCollector", fillcolor="#AF7AC5", fontcolor=white, width=1.8];
+        pi_collector [label="Performance Insights\nCollector", fillcolor="#AF7AC5", fontcolor=white, width=1.8];
+    }
+    
+    // Analysis & Reporting
+    subgraph cluster_analysis {
+        label="Analysis & Reporting Layer";
+        style=filled;
+        color="#FADBD8";
+        fontsize=12;
+        fontname="Arial Bold";
+        
+        analyzer [label="Diagnostic Analyzer\n\n• Threshold Analysis\n• Severity Assessment\n• Recommendations", fillcolor="#E74C3C", fontcolor=white, width=2.5];
+        reporter [label="Report Generator\n\n• Technical Reports\n• Management Reports", fillcolor="#EC7063", fontcolor=white, width=2.5];
+        formatters [label="Formatters\n(Text/JSON)", fillcolor="#F1948A", width=1.8];
+    }
+    
+    // Output
+    output [label="Output\n(Console/File)", shape=folder, fillcolor="#D5DBDB", width=1.8];
+    
+    // Connections - User to CLI
+    user -> cli [label="invoke command", color="#4A90E2", penwidth=2];
+    user -> batch [style=dashed, color="#999999"];
+    batch -> cli [style=dashed, color="#999999"];
+    
+    // CLI to Core
+    cli -> app [label="initialize", color="#4A90E2", penwidth=2];
+    app -> config [label="load config", color="#666666"];
+    app -> models [label="use models", color="#666666"];
+    
+    // Core to AWS Clients
+    app -> client_factory [label="create clients", color="#4A90E2", penwidth=2];
+    client_factory -> rds_client [color="#48C9B0"];
+    client_factory -> cw_client [color="#48C9B0"];
+    client_factory -> pi_client [color="#48C9B0"];
+    
+    // AWS Clients to Services
+    client_factory -> iam [label="authenticate", color="#F39C12", penwidth=1.5];
+    rds_client -> rds [label="API calls", color="#FF9900", penwidth=1.5];
+    cw_client -> cloudwatch [label="API calls", color="#FF9900", penwidth=1.5];
+    pi_client -> pi [label="API calls", color="#FF9900", penwidth=1.5];
+    
+    // App to Collectors
+    app -> inst_collector [label="collect", color="#4A90E2", penwidth=2];
+    app -> metrics_collector [label="collect", color="#4A90E2", penwidth=2];
+    app -> pi_collector [label="collect", color="#4A90E2", penwidth=2];
+    
+    // Collectors to AWS Clients
+    inst_collector -> rds_client [color="#AF7AC5"];
+    metrics_collector -> cw_client [color="#AF7AC5"];
+    pi_collector -> pi_client [color="#AF7AC5"];
+    
+    // Collectors to Analyzer
+    inst_collector -> analyzer [label="instance data", color="#AF7AC5"];
+    metrics_collector -> analyzer [label="metrics data", color="#AF7AC5"];
+    pi_collector -> analyzer [label="PI data", color="#AF7AC5"];
+    
+    // Analyzer to Reporter
+    analyzer -> reporter [label="analysis results", color="#E74C3C", penwidth=2];
+    reporter -> formatters [label="format", color="#E74C3C"];
+    
+    // Reporter to Output
+    formatters -> output [label="generate", color="#E74C3C", penwidth=2];
+    output -> cli [label="display", color="#4A90E2", penwidth=2];
+    cli -> user [label="results", color="#4A90E2", penwidth=2];
+    
+    // Legend
+    subgraph cluster_legend {
+        label="Legend";
+        style=filled;
+        color="#F8F9F9";
+        fontsize=10;
+        
+        legend_user [label="User/External", shape=ellipse, fillcolor="#4A90E2", fontcolor=white];
+        legend_cli [label="CLI Layer", fillcolor="#FFB84D"];
+        legend_core [label="Core Logic", fillcolor="#5DADE2", fontcolor=white];
+        legend_aws_client [label="AWS Clients", fillcolor="#76D7C4"];
+        legend_aws_service [label="AWS Services", fillcolor="#FF9900", fontcolor=white];
+        legend_collector [label="Collectors", fillcolor="#AF7AC5", fontcolor=white];
+        legend_analysis [label="Analysis/Reporting", fillcolor="#E74C3C", fontcolor=white];
+        
+        {rank=same; legend_user; legend_cli; legend_core; legend_aws_client; legend_aws_service; legend_collector; legend_analysis;}
+    }
+}

@@ -216,3 +216,11 @@ reports/
 *.json
 !pyproject.toml
 .rds-diagnostics/
+
+# Architecture diagrams (generated files)
+architecture_diagram.png
+architecture-diagram.png
+architecture-diagram.svg
+architecture-diagram.pdf
+*.gv
+*.gv.png
