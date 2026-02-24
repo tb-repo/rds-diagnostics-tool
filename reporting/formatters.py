@@ -336,7 +336,17 @@ class TechnicalReportFormatter:
                         "average_load_aas": q.average_execution_time,
                         "time_samples": q.execution_count,
                         "query_text": q.query_text,
-                        "wait_events": q.wait_events
+                        "wait_events": q.wait_events,
+                        "rows_affected": q.rows_affected,
+                        # Enhanced metrics (optional fields)
+                        "engine_type": q.engine_type,
+                        "executions_per_second": q.executions_per_second,
+                        "cpu_time": q.cpu_time,
+                        "lock_time": q.lock_time,
+                        "rows_examined": q.rows_examined,
+                        "rows_returned": q.rows_returned,
+                        "read_io_bytes": q.read_io_bytes,
+                        "write_io_bytes": q.write_io_bytes
                     }
                     for q in (diagnostic_data.performance_insights_queries or [])
                 ],

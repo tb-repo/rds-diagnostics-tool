@@ -204,14 +204,37 @@ class CloudWatchMetrics:
 # Performance Insights Data
 @dataclass
 class SQLQuery:
-    """Information about a SQL query from Performance Insights."""
+    """
+    Information about a SQL query from Performance Insights.
+    
+    Fields are divided into three categories:
+    1. Core fields (always present) - query_id, query_text, execution metrics
+    2. Basic metrics (usually present) - total_execution_time, average_execution_time, execution_count
+    3. Enhanced metrics (engine-dependent, optional) - cpu_time, lock_time, rows metrics, I/O metrics
+    
+    All enhanced metrics are Optional to maintain backward compatibility and handle
+    engine-specific metric availability gracefully.
+    """
+    # Core identification fields (required)
     query_id: str
     query_text: str
     total_execution_time: float
     average_execution_time: float
     execution_count: int
+    
+    # Basic optional fields (existing, maintained for backward compatibility)
     rows_affected: Optional[int] = None
     wait_events: List[str] = field(default_factory=list)
+    
+    # Enhanced optional fields (new - engine-dependent)
+    engine_type: Optional[str] = None  # e.g., 'mysql', 'postgres', 'aurora-mysql'
+    executions_per_second: Optional[float] = None  # Calls per second
+    cpu_time: Optional[float] = None  # CPU time in milliseconds
+    lock_time: Optional[float] = None  # Lock wait time in milliseconds
+    rows_examined: Optional[int] = None  # Rows scanned
+    rows_returned: Optional[int] = None  # Rows returned to client
+    read_io_bytes: Optional[int] = None  # Bytes read from storage
+    write_io_bytes: Optional[int] = None  # Bytes written to storage
 
 
 @dataclass

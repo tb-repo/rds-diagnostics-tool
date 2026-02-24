@@ -9,6 +9,7 @@ from core.models import (
     CloudWatchMetrics, MetricAnalysis, Violation, TrendAnalysis,
     Severity, Trend, SQLQuery, MetricSeries
 )
+from analysis.sql_analyzer import SQLRecommendationGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class DiagnosticAnalyzer:
             thresholds: Metric threshold configuration
         """
         self.thresholds = thresholds
+        self.sql_analyzer = SQLRecommendationGenerator()
     
     def analyze_metrics(self, metrics: CloudWatchMetrics) -> MetricAnalysis:
         """
@@ -345,14 +347,53 @@ class DiagnosticAnalyzer:
                     "Investigate root cause and plan capacity adjustments."
                 )
         
-        # Query-specific recommendations
+        # SQL-specific recommendations using enhanced analyzer
         if queries:
-            high_impact_queries = [q for q in queries if q.total_execution_time > 1000]
-            if high_impact_queries:
+            sql_recommendations = self.sql_analyzer.generate_recommendations(queries)
+            
+            if sql_recommendations:
                 recommendations.append(
-                    f"Found {len(high_impact_queries)} high-impact queries. "
-                    "Review execution plans and add appropriate indexes."
+                    f"\n=== SQL Query Recommendations ({len(sql_recommendations)} issues found) ==="
                 )
+                
+                # Group by severity
+                critical_recs = [r for r in sql_recommendations if r.severity == 'critical']
+                warning_recs = [r for r in sql_recommendations if r.severity == 'warning']
+                info_recs = [r for r in sql_recommendations if r.severity == 'info']
+                
+                # Add critical recommendations
+                if critical_recs:
+                    recommendations.append(f"\nCRITICAL SQL Issues ({len(critical_recs)}):")
+                    for rec in critical_recs:
+                        recommendations.append(
+                            f"  • [{rec.category.upper()}] Query {rec.query_id}: {rec.recommendation}"
+                        )
+                
+                # Add warning recommendations
+                if warning_recs:
+                    recommendations.append(f"\nWARNING SQL Issues ({len(warning_recs)}):")
+                    for rec in warning_recs:
+                        recommendations.append(
+                            f"  • [{rec.category.upper()}] Query {rec.query_id}: {rec.recommendation}"
+                        )
+                
+                # Add info recommendations (limit to top 5)
+                if info_recs:
+                    recommendations.append(f"\nINFO SQL Suggestions ({len(info_recs)}):")
+                    for rec in info_recs[:5]:
+                        recommendations.append(
+                            f"  • [{rec.category.upper()}] Query {rec.query_id}: {rec.recommendation}"
+                        )
+                    if len(info_recs) > 5:
+                        recommendations.append(f"  ... and {len(info_recs) - 5} more suggestions")
+            else:
+                # Fallback to basic query recommendations
+                high_impact_queries = [q for q in queries if q.total_execution_time > 1000]
+                if high_impact_queries:
+                    recommendations.append(
+                        f"Found {len(high_impact_queries)} high-impact queries. "
+                        "Review execution plans and add appropriate indexes."
+                    )
         
         if not recommendations:
             recommendations.append(
