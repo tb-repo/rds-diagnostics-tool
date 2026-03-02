@@ -73,6 +73,70 @@ class TimeRange:
             raise ValueError(f"Unsupported time unit: {unit}")
         
         return TimeRange(start=start, end=end)
+    
+    @staticmethod
+    def from_timestamps(start_str: str, end_str: str) -> "TimeRange":
+        """
+        Parse start and end timestamp strings and create TimeRange.
+        
+        Supported formats:
+        - ISO 8601: "2026-03-02T10:00:00" or "2026-03-02T10:00:00Z"
+        - Date only: "2026-03-02" (assumes 00:00:00)
+        - Date and time: "2026-03-02 10:00:00"
+        
+        Args:
+            start_str: Start timestamp string
+            end_str: End timestamp string
+            
+        Returns:
+            TimeRange object with parsed start and end times
+            
+        Raises:
+            ValueError: If timestamp format is invalid or end is before start
+        """
+        from dateutil import parser
+        
+        try:
+            # Parse start time
+            start = parser.parse(start_str)
+            # If no timezone info, assume UTC
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=None)
+                # Convert to UTC-aware datetime
+                start_utc = start
+            else:
+                # Convert to UTC
+                start_utc = start.astimezone(None).replace(tzinfo=None)
+            
+            # Parse end time
+            end = parser.parse(end_str)
+            # If no timezone info, assume UTC
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=None)
+                end_utc = end
+            else:
+                end_utc = end.astimezone(None).replace(tzinfo=None)
+            
+            # Validate time range
+            if end_utc <= start_utc:
+                raise ValueError(
+                    f"End time ({end_str}) must be after start time ({start_str})"
+                )
+            
+            # Check if time range is too large (max 30 days)
+            duration = end_utc - start_utc
+            if duration.days > 30:
+                raise ValueError(
+                    f"Time range too large: {duration.days} days. Maximum is 30 days."
+                )
+            
+            return TimeRange(start=start_utc, end=end_utc)
+            
+        except (ValueError, parser.ParserError) as e:
+            raise ValueError(
+                f"Invalid timestamp format: {e}. "
+                "Expected formats: '2026-03-02T10:00:00', '2026-03-02 10:00:00', or '2026-03-02'"
+            )
 
 
 # RDS Instance Information
@@ -235,6 +299,9 @@ class SQLQuery:
     rows_returned: Optional[int] = None  # Rows returned to client
     read_io_bytes: Optional[int] = None  # Bytes read from storage
     write_io_bytes: Optional[int] = None  # Bytes written to storage
+    read_io_time: Optional[float] = None  # Read I/O time in milliseconds (Aurora PG 17+)
+    write_io_time: Optional[float] = None  # Write I/O time in milliseconds (Aurora PG 17+)
+    rows_per_second: Optional[float] = None  # Rows processed per second (Aurora PG 17+)
 
 
 @dataclass
@@ -259,6 +326,50 @@ class TopUser:
     user_name: str
     total_load: float
     load_percentage: float
+
+
+@dataclass
+class OSMetrics:
+    """
+    OS-level performance metrics from Performance Insights.
+    
+    These metrics provide system-level insights that help correlate
+    database performance with underlying infrastructure health.
+    """
+    # CPU metrics
+    cpu_total: Optional[float] = None  # Total CPU utilization %
+    cpu_user: Optional[float] = None  # User space CPU %
+    cpu_system: Optional[float] = None  # System/kernel CPU %
+    cpu_wait: Optional[float] = None  # I/O wait % (key indicator of I/O bottleneck)
+    
+    # Memory metrics (in GB)
+    memory_free_gb: Optional[float] = None
+    memory_active_gb: Optional[float] = None
+    memory_cached_gb: Optional[float] = None
+    
+    # Disk I/O metrics - KEY METRICS FOR PERFORMANCE ANALYSIS
+    read_iops: Optional[float] = None  # Read operations per second
+    write_iops: Optional[float] = None  # Write operations per second
+    read_latency_ms: Optional[float] = None  # Read latency in milliseconds
+    write_latency_ms: Optional[float] = None  # Write latency in milliseconds
+    read_throughput_kbps: Optional[float] = None  # Read throughput in KB/s
+    write_throughput_kbps: Optional[float] = None  # Write throughput in KB/s
+    disk_queue_depth: Optional[float] = None  # Average queue depth (I/O bottleneck indicator)
+    disk_await_ms: Optional[float] = None  # Average wait time in milliseconds
+    disk_utilization_pct: Optional[float] = None  # Disk utilization percentage
+    
+    # Temp usage metrics (PostgreSQL specific)
+    temp_blocks_read: Optional[float] = None  # Temp blocks read (queries spilling to disk)
+    temp_blocks_written: Optional[float] = None  # Temp blocks written
+    
+    # Swap metrics (in GB)
+    swap_free_gb: Optional[float] = None
+    swap_in_rate: Optional[float] = None  # Swap in rate (memory pressure indicator)
+    swap_out_rate: Optional[float] = None  # Swap out rate
+    
+    # Load average
+    load_avg_1min: Optional[float] = None
+    load_avg_5min: Optional[float] = None
 
 
 # Analysis Results
@@ -304,6 +415,7 @@ class DiagnosticData:
     analysis: MetricAnalysis
     recommendations: List[str]
     collection_timestamp: datetime
+    os_metrics: Optional[OSMetrics] = None  # OS-level metrics from Performance Insights
 
 
 # Report

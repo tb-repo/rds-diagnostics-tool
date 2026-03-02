@@ -34,7 +34,7 @@ class TestEnhancedSQLCollection:
         })
         collector.rds_client.get_instance_resource_id = Mock(return_value='db-TEST123')
         
-        # Mock describe_dimension_keys response (Phase 1: identify queries)
+        # Mock describe_dimension_keys response with AdditionalMetrics
         collector.pi_client.describe_dimension_keys = Mock(return_value=[
             {
                 'Dimensions': {
@@ -46,7 +46,14 @@ class TestEnhancedSQLCollection:
                     {'Value': 100.0},
                     {'Value': 200.0},
                     {'Value': 300.0}
-                ]
+                ],
+                'AdditionalMetrics': {
+                    'db.sql.stats.executions_per_sec': 0.5,
+                    'db.sql.stats.cpu_time_ms': 800.0,
+                    'db.sql.stats.lock_time_ms': 50.0,
+                    'db.sql.stats.rows_examined': 10000,
+                    'db.sql.stats.rows_sent': 100
+                }
             },
             {
                 'Dimensions': {
@@ -57,56 +64,13 @@ class TestEnhancedSQLCollection:
                 'Partitions': [
                     {'Value': 250.0},
                     {'Value': 250.0}
-                ]
+                ],
+                'AdditionalMetrics': {
+                    'db.sql.stats.executions_per_sec': 0.3,
+                    'db.sql.stats.cpu_time_ms': 400.0
+                }
             }
         ])
-        
-        # Mock get_resource_metrics response (Phase 2: enhanced metrics)
-        def mock_get_resource_metrics(resource_id, metric_queries, start_time, end_time):
-            # Extract SQL ID from filter
-            sql_id = metric_queries[0]['Filter']['db.sql.id']
-            
-            if sql_id == 'sql-abc123':
-                return {
-                    'MetricList': [
-                        {
-                            'Key': {'Metric': 'db.sql.stats.executions_per_sec'},
-                            'DataPoints': [{'Value': 0.5}]
-                        },
-                        {
-                            'Key': {'Metric': 'db.sql.stats.cpu_time_ms'},
-                            'DataPoints': [{'Value': 800.0}]
-                        },
-                        {
-                            'Key': {'Metric': 'db.sql.stats.lock_time_ms'},
-                            'DataPoints': [{'Value': 50.0}]
-                        },
-                        {
-                            'Key': {'Metric': 'db.sql.stats.rows_examined'},
-                            'DataPoints': [{'Value': 10000}]
-                        },
-                        {
-                            'Key': {'Metric': 'db.sql.stats.rows_sent'},
-                            'DataPoints': [{'Value': 100}]
-                        }
-                    ]
-                }
-            elif sql_id == 'sql-xyz789':
-                return {
-                    'MetricList': [
-                        {
-                            'Key': {'Metric': 'db.sql.stats.executions_per_sec'},
-                            'DataPoints': [{'Value': 0.3}]
-                        },
-                        {
-                            'Key': {'Metric': 'db.sql.stats.cpu_time_ms'},
-                            'DataPoints': [{'Value': 400.0}]
-                        }
-                    ]
-                }
-            return {'MetricList': []}
-        
-        collector.pi_client.get_resource_metrics = Mock(side_effect=mock_get_resource_metrics)
         
         # Execute collection
         queries = collector.collect_top_sql_queries(
@@ -147,7 +111,7 @@ class TestEnhancedSQLCollection:
         })
         collector.rds_client.get_instance_resource_id = Mock(return_value='db-TEST456')
         
-        # Mock describe_dimension_keys response
+        # Mock describe_dimension_keys response with AdditionalMetrics
         collector.pi_client.describe_dimension_keys = Mock(return_value=[
             {
                 'Dimensions': {
@@ -155,31 +119,15 @@ class TestEnhancedSQLCollection:
                     'db.sql.statement': 'SELECT * FROM products WHERE category = $1'
                 },
                 'Total': 750.0,
-                'Partitions': [{'Value': 750.0}]
+                'Partitions': [{'Value': 750.0}],
+                'AdditionalMetrics': {
+                    'db.sql.stats.calls_per_sec': 0.8,
+                    'db.sql.stats.cpu_time_ms': 600.0,
+                    'db.sql.stats.rows': 50,
+                    'db.sql.stats.shared_blks_read': 1024
+                }
             }
         ])
-        
-        # Mock get_resource_metrics response with PostgreSQL metrics
-        collector.pi_client.get_resource_metrics = Mock(return_value={
-            'MetricList': [
-                {
-                    'Key': {'Metric': 'db.sql.stats.calls_per_sec'},
-                    'DataPoints': [{'Value': 0.8}]
-                },
-                {
-                    'Key': {'Metric': 'db.sql.stats.cpu_time_ms'},
-                    'DataPoints': [{'Value': 600.0}]
-                },
-                {
-                    'Key': {'Metric': 'db.sql.stats.rows'},
-                    'DataPoints': [{'Value': 50}]
-                },
-                {
-                    'Key': {'Metric': 'db.sql.stats.shared_blks_read'},
-                    'DataPoints': [{'Value': 1024}]
-                }
-            ]
-        })
         
         # Execute collection
         queries = collector.collect_top_sql_queries(
@@ -201,7 +149,7 @@ class TestEnhancedSQLCollection:
         assert query.lock_time is None  # PostgreSQL doesn't have lock_time
     
     def test_collect_top_sql_queries_fallback_on_enhanced_error(self, collector, time_range, caplog):
-        """Test fallback to basic collection when enhanced collection fails."""
+        """Test fallback to basic collection when enhanced metrics are not available."""
         # Mock Performance Insights enabled
         collector.rds_client.describe_instance = Mock(return_value={
             'PerformanceInsightsEnabled': True,
@@ -209,7 +157,7 @@ class TestEnhancedSQLCollection:
         })
         collector.rds_client.get_instance_resource_id = Mock(return_value='db-TEST123')
         
-        # Mock describe_dimension_keys response
+        # Mock describe_dimension_keys response without AdditionalMetrics
         collector.pi_client.describe_dimension_keys = Mock(return_value=[
             {
                 'Dimensions': {
@@ -218,13 +166,9 @@ class TestEnhancedSQLCollection:
                 },
                 'Total': 1000.0,
                 'Partitions': [{'Value': 1000.0}]
+                # No AdditionalMetrics field - simulates API not returning enhanced metrics
             }
         ])
-        
-        # Mock get_resource_metrics to fail
-        collector.pi_client.get_resource_metrics = Mock(
-            side_effect=AWSClientError("Rate limit exceeded")
-        )
         
         # Execute collection
         queries = collector.collect_top_sql_queries(
@@ -241,16 +185,13 @@ class TestEnhancedSQLCollection:
         assert query.query_text == 'SELECT * FROM users'
         assert query.engine_type == 'mysql'
         
-        # Enhanced metrics should be None (fallback to basic)
+        # Enhanced metrics should be None (not available)
         assert query.executions_per_second is None
         assert query.cpu_time is None
         assert query.lock_time is None
         
         # Basic metrics should still be present
         assert query.total_execution_time == 1000.0
-        
-        # Should log warning about enhanced collection failure
-        assert 'Enhanced metric collection failed' in caplog.text or 'Failed to collect enhanced metrics' in caplog.text
     
     def test_collect_top_sql_queries_deduplication(self, collector, time_range):
         """Test that duplicate SQL IDs are deduplicated."""
@@ -410,11 +351,10 @@ class TestEnhancedSQLCollection:
                     'db.sql.statement': 'SELECT 1'
                 },
                 'Total': 100.0,
-                'Partitions': [{'Value': 100.0}]
+                'Partitions': [{'Value': 100.0}],
+                'AdditionalMetrics': {}
             }
         ])
-        
-        collector.pi_client.get_resource_metrics = Mock(return_value={'MetricList': []})
         
         # Execute collection
         collector.collect_top_sql_queries(
@@ -423,25 +363,22 @@ class TestEnhancedSQLCollection:
             limit=10
         )
         
-        # Verify get_resource_metrics was called
-        assert collector.pi_client.get_resource_metrics.called
+        # Verify describe_dimension_keys was called with additional_metrics
+        assert collector.pi_client.describe_dimension_keys.called
         
-        # Get the metric_queries parameter
-        call_args = collector.pi_client.get_resource_metrics.call_args
-        metric_queries = call_args[1]['metric_queries']
-        
-        # Extract requested metric names
-        requested_metrics = [q['Metric'] for q in metric_queries]
+        # Get the additional_metrics parameter
+        call_args = collector.pi_client.describe_dimension_keys.call_args
+        additional_metrics = call_args[1].get('additional_metrics', [])
         
         # Verify MySQL-specific metrics are requested
-        assert 'db.sql.stats.executions_per_sec' in requested_metrics
-        assert 'db.sql.stats.cpu_time_ms' in requested_metrics
-        assert 'db.sql.stats.lock_time_ms' in requested_metrics  # MySQL has lock_time
-        assert 'db.sql.stats.rows_examined' in requested_metrics  # MySQL has rows_examined
+        assert 'db.sql.stats.executions_per_sec' in additional_metrics
+        assert 'db.sql.stats.cpu_time_ms' in additional_metrics
+        assert 'db.sql.stats.lock_time_ms' in additional_metrics  # MySQL has lock_time
+        assert 'db.sql.stats.rows_examined' in additional_metrics  # MySQL has rows_examined
         
         # Verify PostgreSQL-specific metrics are NOT requested
-        assert 'db.sql.stats.calls_per_sec' not in requested_metrics  # PostgreSQL metric
-        assert 'db.sql.stats.shared_blks_read' not in requested_metrics  # PostgreSQL metric
+        assert 'db.sql.stats.calls_per_sec' not in additional_metrics  # PostgreSQL metric
+        assert 'db.sql.stats.shared_blks_read' not in additional_metrics  # PostgreSQL metric
     
     def test_collect_top_sql_queries_maintains_backward_compatibility(self, collector, time_range):
         """Test that method maintains backward compatibility with existing signature."""

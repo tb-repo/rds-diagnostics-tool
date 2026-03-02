@@ -7,6 +7,8 @@ A command-line utility for diagnosing and reporting on AWS RDS instance performa
 - 🔍 **Instance Discovery**: List all RDS instances across multiple AWS accounts and regions
 - 📊 **Performance Metrics**: Collect CPU, memory, connections, IOPS, and storage metrics from CloudWatch
 - 🔎 **Performance Insights**: Retrieve top SQL queries and wait events (when enabled)
+- ⚡ **Enhanced SQL Metrics**: Collect detailed SQL performance data including CPU time, lock time, I/O metrics, and row statistics
+- 🎯 **Smart SQL Recommendations**: Automatic detection of indexing opportunities, lock contention, caching candidates, and CPU-intensive queries
 - 📈 **Intelligent Analysis**: Identify threshold violations, calculate trends, and assess severity
 - 📝 **Flexible Reporting**: Generate technical or management reports in text or JSON format
 - ⚙️ **Configurable Thresholds**: Customize alert thresholds via configuration files
@@ -201,6 +203,17 @@ default_time_range: 1h
 # Default Output Format
 output_format: text
 
+# Performance Insights Configuration
+performance_insights:
+  enabled: true
+  max_queries: 25
+  collect_enhanced_metrics: true
+  fallback_on_error: true
+  collect_cpu_metrics: true
+  collect_lock_metrics: true
+  collect_io_metrics: true
+  collect_row_metrics: true
+
 # Metric Thresholds
 thresholds:
   cpu:
@@ -221,6 +234,21 @@ thresholds:
 ```
 
 See `config.example.yaml` for a complete example with all options.
+
+### Performance Insights Configuration
+
+The tool can collect enhanced SQL metrics when Performance Insights is enabled:
+
+- `enabled`: Enable/disable Performance Insights collection (default: true)
+- `max_queries`: Maximum number of SQL queries to collect (1-100, default: 25)
+- `collect_enhanced_metrics`: Collect detailed metrics beyond basic query stats (default: true)
+- `fallback_on_error`: Continue with basic metrics if enhanced collection fails (default: true)
+- `collect_cpu_metrics`: Collect CPU time metrics (default: true)
+- `collect_lock_metrics`: Collect lock time metrics (default: true)
+- `collect_io_metrics`: Collect I/O metrics (default: true)
+- `collect_row_metrics`: Collect row statistics (default: true)
+
+**Note:** These settings control LOCAL tool behavior only and do NOT modify AWS resources.
 
 ### Using Configuration Files
 
@@ -266,7 +294,19 @@ The tool requires the following IAM permissions:
 }
 ```
 
-**Note:** Performance Insights permissions (`pi:*`) are only required if you want to retrieve SQL query and wait event data. The tool will work without these permissions but will skip Performance Insights data collection.
+### Permission Details
+
+**Required for Basic Functionality:**
+- `rds:DescribeDBInstances` - List and describe RDS instances
+- `rds:DescribeDBClusters` - List and describe RDS clusters
+- `cloudwatch:GetMetricStatistics` - Retrieve CloudWatch metrics
+- `cloudwatch:GetMetricData` - Retrieve CloudWatch metric data
+
+**Required for Performance Insights (Optional but Recommended):**
+- `pi:DescribeDimensionKeys` - Identify top SQL queries and wait events
+- `pi:GetResourceMetrics` - Retrieve detailed SQL performance metrics (CPU time, lock time, I/O, row statistics)
+
+**Note:** The tool will work without Performance Insights permissions but will skip SQL query analysis and enhanced metrics collection. For full functionality including SQL recommendations, both `pi:DescribeDimensionKeys` and `pi:GetResourceMetrics` are required.
 
 ### Creating an IAM Policy
 
@@ -324,6 +364,98 @@ rds-diag diagnose --instance your-instance --region correct-region
 **Message:** `Performance Insights not enabled or no query data available`
 
 **Solution:** This is informational. Performance Insights must be enabled on the RDS instance to retrieve SQL query data. The tool will continue with CloudWatch metrics only.
+
+To enable Performance Insights:
+1. Go to RDS Console
+2. Select your instance
+3. Modify instance settings
+4. Enable Performance Insights
+5. Wait for the modification to complete
+
+**Note:** Enhanced SQL metrics require both Performance Insights to be enabled AND the `pi:GetResourceMetrics` IAM permission.
+
+## Enhanced SQL Features
+
+### What's New
+
+The tool now collects detailed SQL performance metrics when Performance Insights is enabled:
+
+**Enhanced Metrics:**
+- Execution rate (queries per second)
+- CPU time per query
+- Lock time and contention
+- Rows examined vs. rows returned (efficiency ratio)
+- I/O metrics (read/write bytes)
+
+**Smart Recommendations:**
+- **INDEX**: Identifies queries with low efficiency ratios that may benefit from indexing
+- **LOCK**: Detects queries with significant lock contention
+- **CACHE**: Suggests high-frequency, fast queries suitable for caching
+- **CPU**: Flags CPU-intensive queries that may need optimization
+
+### Example Output
+
+**Technical Report with Enhanced Metrics:**
+```
+SQL Query Performance
+=====================
+
+Query 1 (ID: 0x1A2B3C4D5E6F7890)
+-----------------------------------
+SQL: SELECT * FROM orders WHERE customer_id = ? AND status = 'pending'
+Total Execution Time: 45,230.50 ms
+Average Execution Time: 125.30 ms
+Execution Count: 361
+
+Execution Metrics:
+  Executions/sec: 0.50 calls/sec
+  Total Time: 45,230.50 ms
+
+Resource Metrics:
+  CPU Time: 38,450.20 ms (85.0%)
+  Lock Time: 1,250.30 ms (2.8%)
+
+Row Metrics:
+  Rows Examined: 1,250,000
+  Rows Returned: 1,250
+  Efficiency Ratio: 0.10% ⚠️ LOW EFFICIENCY
+
+I/O Metrics:
+  Read I/O: 512.50 MB
+  Write I/O: 0.00 MB
+
+Recommendations:
+  [CRITICAL] INDEX: Query examines 1,250,000 rows but returns only 1,250 (0.10% efficiency).
+             Consider adding an index on customer_id and status columns.
+             Potential impact: 45,230.50 ms total execution time
+```
+
+**Management Report with SQL Summary:**
+```
+SQL Performance Summary
+=======================
+Analyzed 25 queries with 3 performance issues identified
+
+Top Issues:
+1. Query 0x1A2B3C4D: Low efficiency (0.10%) - 1.25M rows examined
+   SQL: SELECT * FROM orders WHERE customer_id = ?...
+   Recommendation: Add index on customer_id, status
+
+2. Query 0x9F8E7D6C: High lock contention (45.2%)
+   SQL: UPDATE inventory SET quantity = quantity - ?...
+   Recommendation: Review transaction isolation level
+
+3. Query 0x5B4A3C2D: CPU-intensive (92.5% CPU time)
+   SQL: SELECT * FROM products WHERE description LIKE...
+   Recommendation: Optimize query or consider full-text search
+
+Key Recommendations:
+- INDEX: 5 queries could benefit from indexing
+- LOCK: 2 queries experiencing lock contention
+- CPU: 3 queries are CPU-intensive
+```
+
+For detailed usage examples, see [ENHANCED-SQL-GUIDE.md](ENHANCED-SQL-GUIDE.md) and [QUICK-REFERENCE.md](QUICK-REFERENCE.md).
 
 ## Development
 

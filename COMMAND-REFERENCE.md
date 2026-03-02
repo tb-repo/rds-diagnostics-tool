@@ -487,8 +487,34 @@ rds-diag --profile LT-PRD report --instance prod-database --report-type manageme
 
 **Purpose:** See detailed progress information during execution
 
+**IMPORTANT:** `--verbose` (or `-v`) is a **global option** and must come **before** the command name.
+
+#### Correct Usage
 ```bash
-rds-diag --profile LT-SIT --verbose diagnose --instance ielts-ors-sit-v1-clusterinstance1
+# Verbose flag BEFORE the command
+rds-diag --verbose --profile LT-SIT diagnose --instance ielts-ors-sit-v1-clusterinstance1
+
+# Short form
+rds-diag -v -p LT-SIT diagnose -i ielts-ors-sit-v1-clusterinstance1
+
+# With report command
+rds-diag --verbose --profile LT-SIT report --instance ielts-ors-sit-v1-clusterinstance1 --time-range 24h
+```
+
+#### ❌ Incorrect Usage
+```bash
+# This will NOT work - verbose flag after command
+rds-diag report --instance my-db --verbose --profile LT-SIT
+```
+
+#### Command Structure
+```bash
+rds-diag [GLOBAL-OPTIONS] COMMAND [COMMAND-OPTIONS]
+         ^^^^^^^^^^^^^^^^ ^^^^^^^ ^^^^^^^^^^^^^^^^^^
+         --verbose        report  --instance, --time-range, etc.
+         --profile
+         --region
+         --config
 ```
 
 Output includes detailed logging:
@@ -577,7 +603,44 @@ For convenience, use the provided batch scripts with simplified syntax:
 
 ## Common Use Cases
 
-### 1. Daily Health Check
+### 1. Working with Aurora Clusters
+
+**Important:** For Aurora clusters, use the **instance identifier**, not the cluster identifier.
+
+#### Find Aurora Instance IDs
+```bash
+# List all instances (including Aurora)
+rds-diag --profile LT-SIT list
+```
+
+**Output will show:**
+```
+Instance ID                              Engine          Status       Instance Class
+--------------------------------------------------------------------------------
+ielts-ses-sit-v1-clusterinstance1       aurora-mysql    available    db.r5.large
+ielts-ses-sit-v1-clusterinstance2       aurora-mysql    available    db.r5.large
+```
+
+#### Diagnose Aurora Instance
+```bash
+# Use the instance ID, not cluster ID
+rds-diag --profile LT-SIT diagnose --instance ielts-ses-sit-v1-clusterinstance1 --time-range 24h
+```
+
+#### Generate Aurora Report
+```bash
+# Correct - using instance ID
+rds-diag --profile LT-SIT report --instance ielts-ses-sit-v1-clusterinstance1 --time-range 24h --output aurora-report.txt
+
+# ❌ Incorrect - using cluster ID
+rds-diag --profile LT-SIT report --instance ielts-ses-sit-v1-cluster --time-range 24h
+```
+
+**Note:** Aurora clusters have:
+- **Cluster ID**: `ielts-ses-sit-v1-cluster` (don't use this)
+- **Instance IDs**: `ielts-ses-sit-v1-clusterinstance1`, `ielts-ses-sit-v1-clusterinstance2` (use these)
+
+### 2. Daily Health Check
 ```bash
 # Check all instances in production
 rds-diag --profile LT-PRD list
@@ -587,7 +650,7 @@ rds-diag --profile LT-PRD diagnose --instance prod-db-1
 rds-diag --profile LT-PRD diagnose --instance prod-db-2
 ```
 
-### 2. Incident Investigation
+### 3. Incident Investigation
 ```bash
 # Get detailed 24-hour report
 rds-diag --profile LT-PRD report --instance affected-db --time-range 24h --output incident-report.txt
@@ -596,19 +659,19 @@ rds-diag --profile LT-PRD report --instance affected-db --time-range 24h --outpu
 rds-diag --profile LT-PRD report --instance affected-db --time-range 1h --format json --output pi-data.json
 ```
 
-### 3. Capacity Planning
+### 4. Capacity Planning
 ```bash
 # Generate 7-day trend report
 rds-diag --profile LT-PRD report --instance prod-db --time-range 7d --output capacity-analysis.txt
 ```
 
-### 4. Management Reporting
+### 5. Management Reporting
 ```bash
 # Weekly executive summary
 rds-diag --profile LT-PRD report --instance prod-db --report-type management --time-range 7d --output weekly-summary.txt
 ```
 
-### 5. Multi-Environment Monitoring
+### 6. Multi-Environment Monitoring
 ```bash
 # Check all environments
 rds-diag --profile LT-DEV diagnose --instance dev-db

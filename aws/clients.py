@@ -450,32 +450,51 @@ class PerformanceInsightsClient(BaseAWSClient):
         group_by: str,
         start_time: datetime,
         end_time: datetime,
-        metric: str = 'db.load.avg'
+        metric: str = 'db.load.avg',
+        additional_metrics: Optional[List[str]] = None
     ) -> List[Dict]:
         """
         Get dimension keys (e.g., top SQL queries) from Performance Insights.
         
         Args:
             resource_id: RDS resource ID
-            group_by: Dimension to group by (e.g., 'db.sql')
+            group_by: Dimension to group by (e.g., 'db.sql', 'db.user', 'db.name')
             start_time: Start of time range
             end_time: End of time range
             metric: Metric to analyze (default 'db.load.avg')
+            additional_metrics: Optional list of additional metrics to include
             
         Returns:
             List of dimension key dictionaries
         """
         try:
+            params = {
+                'ServiceType': 'RDS',
+                'Identifier': resource_id,
+                'StartTime': start_time,
+                'EndTime': end_time,
+                'Metric': metric,
+                'GroupBy': {'Group': group_by}
+            }
+            
+            # Add additional metrics if provided and not empty
+            if additional_metrics and len(additional_metrics) > 0:
+                params['AdditionalMetrics'] = additional_metrics
+                logger.debug(f"Adding AdditionalMetrics parameter: {additional_metrics}")
+            else:
+                logger.debug("No additional metrics requested or list is empty")
+            
+            logger.debug(f"Calling describe_dimension_keys with params: {params}")
+            
             response = self._execute_with_retry(
                 'describe_dimension_keys',
-                ServiceType='RDS',
-                Identifier=resource_id,
-                StartTime=start_time,
-                EndTime=end_time,
-                Metric=metric,
-                GroupBy={'Group': group_by}
+                **params
             )
-            return response.get('Keys', [])
+            
+            keys = response.get('Keys', [])
+            logger.debug(f"describe_dimension_keys returned {len(keys)} keys")
+            
+            return keys
             
         except AWSClientError:
             raise

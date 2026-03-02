@@ -92,12 +92,43 @@ class MetricThresholds:
 
 
 @dataclass
+class PerformanceInsightsConfig:
+    """Configuration for Performance Insights data collection."""
+    enabled: bool = True
+    max_queries: int = 25
+    collect_enhanced_metrics: bool = True
+    fallback_on_error: bool = True
+    collect_cpu_metrics: bool = True
+    collect_lock_metrics: bool = True
+    collect_io_metrics: bool = True
+    collect_row_metrics: bool = True
+    
+    def validate(self) -> list[str]:
+        """
+        Validate Performance Insights configuration.
+        
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+        
+        if self.max_queries < 1:
+            errors.append(f"max_queries must be at least 1: {self.max_queries}")
+        
+        if self.max_queries > 100:
+            errors.append(f"max_queries cannot exceed 100: {self.max_queries}")
+        
+        return errors
+
+
+@dataclass
 class Configuration:
     """Application configuration."""
     aws_profile: Optional[str] = None
     default_region: str = "ap-southeast-1"
     default_time_range: str = "1h"
     metric_thresholds: MetricThresholds = field(default_factory=MetricThresholds)
+    performance_insights: PerformanceInsightsConfig = field(default_factory=PerformanceInsightsConfig)
     output_format: OutputFormat = OutputFormat.TEXT
     
     @staticmethod
@@ -161,6 +192,27 @@ class Configuration:
             logger.warning("Using default values for invalid threshold settings")
             thresholds = MetricThresholds()
         
+        # Parse Performance Insights configuration
+        pi_data = data.get('performance_insights', {})
+        pi_config = PerformanceInsightsConfig(
+            enabled=pi_data.get('enabled', True),
+            max_queries=pi_data.get('max_queries', 25),
+            collect_enhanced_metrics=pi_data.get('collect_enhanced_metrics', True),
+            fallback_on_error=pi_data.get('fallback_on_error', True),
+            collect_cpu_metrics=pi_data.get('collect_cpu_metrics', True),
+            collect_lock_metrics=pi_data.get('collect_lock_metrics', True),
+            collect_io_metrics=pi_data.get('collect_io_metrics', True),
+            collect_row_metrics=pi_data.get('collect_row_metrics', True)
+        )
+        
+        # Validate Performance Insights configuration
+        pi_validation_errors = pi_config.validate()
+        if pi_validation_errors:
+            for error in pi_validation_errors:
+                logger.error(f"Performance Insights configuration validation error: {error}")
+            logger.warning("Using default values for invalid Performance Insights settings")
+            pi_config = PerformanceInsightsConfig()
+        
         # Parse output format
         output_format_str = data.get('output_format', 'text').lower()
         try:
@@ -176,6 +228,7 @@ class Configuration:
             default_region=data.get('default_region', 'ap-southeast-1'),
             default_time_range=data.get('default_time_range', '1h'),
             metric_thresholds=thresholds,
+            performance_insights=pi_config,
             output_format=output_format
         )
     
@@ -216,6 +269,16 @@ class Configuration:
                 iops_critical=self.metric_thresholds.iops_critical,
                 storage_warning=self.metric_thresholds.storage_warning,
                 storage_critical=self.metric_thresholds.storage_critical,
+            ),
+            performance_insights=PerformanceInsightsConfig(
+                enabled=self.performance_insights.enabled,
+                max_queries=self.performance_insights.max_queries,
+                collect_enhanced_metrics=self.performance_insights.collect_enhanced_metrics,
+                fallback_on_error=self.performance_insights.fallback_on_error,
+                collect_cpu_metrics=self.performance_insights.collect_cpu_metrics,
+                collect_lock_metrics=self.performance_insights.collect_lock_metrics,
+                collect_io_metrics=self.performance_insights.collect_io_metrics,
+                collect_row_metrics=self.performance_insights.collect_row_metrics,
             ),
             output_format=self.output_format
         )

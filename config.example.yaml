@@ -49,6 +49,39 @@ thresholds:
     warning: 80.0    # Warn when storage usage exceeds 80%
     critical: 90.0   # Critical when storage usage exceeds 90%
 
+# Performance Insights Configuration
+# Controls how the tool collects and processes Performance Insights data
+# Note: This does NOT enable/disable Performance Insights on your RDS instance
+# It only controls how this tool behaves when collecting data
+performance_insights:
+  # Enable/disable Performance Insights data collection in the tool
+  # Default: true
+  enabled: true
+  
+  # Maximum number of SQL queries to retrieve from Performance Insights
+  # Range: 1-100
+  # Default: 25
+  max_queries: 25
+  
+  # Enable/disable enhanced metric collection (CPU time, lock time, I/O, rows)
+  # If disabled, only basic query metrics are collected
+  # Default: true
+  collect_enhanced_metrics: true
+  
+  # Fallback to basic collection if enhanced metric collection fails
+  # If true, continues with basic metrics when enhanced collection errors occur
+  # If false, skips the query entirely on error
+  # Default: true
+  fallback_on_error: true
+  
+  # Control which enhanced metrics to collect (only applies if collect_enhanced_metrics is true)
+  # These settings allow fine-grained control over which metrics are retrieved
+  # Useful if certain metrics are not available for your engine type
+  collect_cpu_metrics: true      # CPU time and percentage
+  collect_lock_metrics: true     # Lock time and percentage
+  collect_io_metrics: true       # Read/write I/O bytes
+  collect_row_metrics: true      # Rows examined and returned
+
 # Account-Specific Settings (optional)
 # Define custom settings for specific AWS accounts
 # Uncomment and customize as needed

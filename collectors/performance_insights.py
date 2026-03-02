@@ -85,17 +85,23 @@ ENGINE_METRICS = {
     'aurora-postgresql': {
         'execution': [
             'db.sql.stats.calls_per_sec',
-            'db.sql.stats.total_time_ms'
+            'db.sql.stats.total_time_ms',
+            'db.sql.stats.avg_latency_ms'  # Added for Aurora PG 17+
         ],
         'resource': [
-            'db.sql.stats.cpu_time_ms'
+            'db.sql.stats.cpu_time_ms',
+            'db.sql.stats.read_latency_ms',  # Added for Aurora PG 17+
+            'db.sql.stats.write_latency_ms'  # Added for Aurora PG 17+
         ],
         'rows': [
-            'db.sql.stats.rows'
+            'db.sql.stats.rows',
+            'db.sql.stats.rows_per_sec'  # Added for Aurora PG 17+
         ],
         'io': [
             'db.sql.stats.shared_blks_read',
-            'db.sql.stats.shared_blks_written'
+            'db.sql.stats.shared_blks_written',
+            'db.sql.stats.blk_read_time',  # Added for Aurora PG 17+
+            'db.sql.stats.blk_write_time'  # Added for Aurora PG 17+
         ]
     },
     'oracle-ee': {
@@ -171,6 +177,7 @@ METRIC_FIELD_MAPPING = {
     'db.sql.stats.executions_per_sec': 'executions_per_second',
     'db.sql.stats.calls_per_sec': 'executions_per_second',
     'db.sql.stats.total_time_ms': 'total_execution_time',
+    'db.sql.stats.avg_latency_ms': 'average_execution_time',  # Aurora PG 17+
     'db.sql.stats.elapsed_time_per_sec_ms': 'total_execution_time',
     'db.sql.stats.total_elapsed_time_ms': 'total_execution_time',
     
@@ -179,11 +186,16 @@ METRIC_FIELD_MAPPING = {
     'db.sql.stats.cpu_time_per_sec_ms': 'cpu_time',
     'db.sql.stats.total_worker_time_ms': 'cpu_time',
     'db.sql.stats.lock_time_ms': 'lock_time',
+    'db.sql.stats.read_latency_ms': 'read_io_time',  # Aurora PG 17+ - NEW FIELD
+    'db.sql.stats.write_latency_ms': 'write_io_time',  # Aurora PG 17+ - NEW FIELD
+    'db.sql.stats.blk_read_time': 'read_io_time',  # Aurora PG 17+ - alternative name
+    'db.sql.stats.blk_write_time': 'write_io_time',  # Aurora PG 17+ - alternative name
     
     # Row metrics
     'db.sql.stats.rows_examined': 'rows_examined',
     'db.sql.stats.rows_sent': 'rows_returned',
     'db.sql.stats.rows': 'rows_returned',
+    'db.sql.stats.rows_per_sec': 'rows_per_second',  # Aurora PG 17+ - NEW FIELD
     'db.sql.stats.rows_processed_per_sec': 'rows_returned',
     'db.sql.stats.total_rows': 'rows_returned',
     
@@ -408,20 +420,21 @@ class PerformanceInsightsCollector:
         # Get engine-specific metric configuration
         metric_config = self._get_engine_metrics_config(engine)
         
+        logger.debug(
+            f"Building metric queries for SQL ID {sql_id}, engine {engine}. "
+            f"Metrics config: {metric_config}"
+        )
+        
         # Build metric queries for get_resource_metrics
         metric_queries = []
         for category, metric_names in metric_config.items():
             for metric_name in metric_names:
+                # Build query without Filter first - let's get all data and filter locally
                 metric_queries.append({
-                    'Metric': metric_name,
-                    'GroupBy': {
-                        'Group': 'db.sql',
-                        'Dimensions': ['db.sql.id']
-                    },
-                    'Filter': {
-                        'db.sql.id': sql_id
-                    }
+                    'Metric': metric_name
                 })
+        
+        logger.debug(f"Built {len(metric_queries)} metric queries: {metric_queries}")
         
         try:
             # Call get_resource_metrics
@@ -435,9 +448,13 @@ class PerformanceInsightsCollector:
             # Parse response and extract metrics
             metrics = {}
             
+            logger.debug(f"get_resource_metrics response for SQL ID {sql_id}: {response}")
+            
             for metric_data in response.get('MetricList', []):
                 metric_key = metric_data.get('Key', {})
                 metric_name = metric_key.get('Metric')
+                
+                logger.debug(f"Processing metric: {metric_name}, data: {metric_data}")
                 
                 if not metric_name:
                     continue
@@ -517,10 +534,9 @@ class PerformanceInsightsCollector:
         
         Enhanced behavior:
             1. Use describe_dimension_keys to identify top queries
-            2. For each query, call _collect_query_metrics for enhanced data
+            2. Request additional metrics in the same API call
             3. Build SQLQuery with all available metrics
             4. Handle missing metrics gracefully (set to None)
-            5. Fall back to basic collection if enhanced fails
         
         Args:
             instance_id: RDS instance identifier
@@ -533,7 +549,7 @@ class PerformanceInsightsCollector:
         Backward compatibility:
             - Maintains existing signature
             - Returns same SQLQuery type (with optional new fields)
-            - Gracefully degrades if get_resource_metrics unavailable
+            - Gracefully degrades if metrics unavailable
         """
         if not self.is_performance_insights_enabled(instance_id):
             logger.warning(
@@ -549,20 +565,64 @@ class PerformanceInsightsCollector:
             
             logger.debug(f"Collecting SQL queries for {instance_id} (engine: {engine})")
             
+            # Get engine-specific metrics to request
+            metric_config = self._get_engine_metrics_config(engine)
+            additional_metrics = []
+            for category, metric_names in metric_config.items():
+                additional_metrics.extend(metric_names)
+            
+            logger.debug(f"Requesting additional metrics: {additional_metrics}")
+            
             # Phase 1: Identify top queries using describe_dimension_keys
-            dimension_keys = self.pi_client.describe_dimension_keys(
-                resource_id=resource_id,
-                group_by='db.sql',
-                start_time=time_range.start,
-                end_time=time_range.end,
-                metric='db.load.avg'
-            )
+            # Try with additional_metrics first, fall back to basic if it fails
+            dimension_keys = []
+            try:
+                if additional_metrics:
+                    dimension_keys = self.pi_client.describe_dimension_keys(
+                        resource_id=resource_id,
+                        group_by='db.sql',
+                        start_time=time_range.start,
+                        end_time=time_range.end,
+                        metric='db.load.avg',
+                        additional_metrics=additional_metrics
+                    )
+                    logger.debug(f"Successfully retrieved {len(dimension_keys)} dimension keys with additional metrics")
+                else:
+                    # No additional metrics to request, go straight to basic
+                    raise ValueError("No additional metrics configured")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to get dimension keys with additional_metrics: {e}. "
+                    f"Retrying without additional metrics..."
+                )
+                # Fallback: try without additional_metrics
+                try:
+                    dimension_keys = self.pi_client.describe_dimension_keys(
+                        resource_id=resource_id,
+                        group_by='db.sql',
+                        start_time=time_range.start,
+                        end_time=time_range.end,
+                        metric='db.load.avg'
+                        # No additional_metrics parameter
+                    )
+                    logger.info(f"Successfully retrieved {len(dimension_keys)} dimension keys without additional metrics")
+                except Exception as e2:
+                    logger.error(f"Failed to get dimension keys even without additional_metrics: {e2}")
+                    raise
             
             # Parse and convert to SQLQuery objects
             queries = []
             seen_queries = set()  # For deduplication
             
+            logger.debug(f"Processing {len(dimension_keys)} dimension keys")
+            
+            if not dimension_keys:
+                logger.warning(f"No SQL queries found for {instance_id} in the specified time range")
+                return []
+            
             for i, key in enumerate(dimension_keys[:limit * 2]):  # Get more to account for duplicates
+                logger.debug(f"Processing dimension key {i+1}: {key}")
+                
                 dimensions = key.get('Dimensions', {})
                 sql_text = dimensions.get('db.sql.statement', 'N/A')
                 sql_id = dimensions.get('db.sql.id', f'query_{i}')
@@ -575,42 +635,42 @@ class PerformanceInsightsCollector:
                 # Get basic metrics from dimension keys
                 total_load = key.get('Total', 0.0)
                 partitions = key.get('Partitions', [])
-                exec_count = len(partitions) if partitions else 1
-                avg_load = total_load / exec_count if exec_count > 0 else total_load
+                # NOTE: Partitions represent time buckets, NOT execution count
+                # Execution count is not available from PI API for PostgreSQL
+                time_buckets = len(partitions) if partitions else 1
+                avg_load = total_load / time_buckets if time_buckets > 0 else total_load
                 wait_events = self._extract_wait_events(key)
                 
-                # Phase 2: Try to collect enhanced metrics for this query
+                # Extract additional metrics from the key's AdditionalMetrics field
+                additional_metrics_data = key.get('AdditionalMetrics', {})
+                
+                logger.debug(
+                    f"SQL ID {sql_id}: AdditionalMetrics = {additional_metrics_data}"
+                )
+                
+                # Map additional metrics to our field names
                 enhanced_metrics = {}
-                try:
-                    enhanced_metrics = self._collect_query_metrics(
-                        resource_id=resource_id,
-                        sql_id=sql_id,
-                        engine=engine,
-                        time_range=time_range
-                    )
-                    
-                    if enhanced_metrics:
-                        logger.debug(
-                            f"Collected {len(enhanced_metrics)} enhanced metrics "
-                            f"for SQL ID {sql_id}"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Enhanced metric collection failed for SQL ID {sql_id}: {e}. "
-                        f"Using basic metrics only."
-                    )
-                    enhanced_metrics = {}
+                for pi_metric_name, value in additional_metrics_data.items():
+                    field_name = self._map_metric_name(pi_metric_name, engine)
+                    if field_name and value is not None:
+                        validated_value = self._validate_metric_value(pi_metric_name, value)
+                        if validated_value is not None:
+                            enhanced_metrics[field_name] = validated_value
+                
+                logger.debug(
+                    f"SQL ID {sql_id}: Mapped {len(enhanced_metrics)} enhanced metrics"
+                )
                 
                 # Build SQLQuery with enhanced metrics when available
                 queries.append(SQLQuery(
                     query_id=sql_id,
                     query_text=sql_text,
-                    total_execution_time=total_load,  # Load from dimension keys
-                    average_execution_time=avg_load,  # Average load per partition
-                    execution_count=exec_count,  # Number of time partitions
+                    total_execution_time=total_load,  # Total load (AAS)
+                    average_execution_time=avg_load,  # Average load per time bucket
+                    execution_count=time_buckets,  # Number of time buckets (NOT actual executions)
                     rows_affected=None,  # Not available in PI API
                     wait_events=wait_events,
-                    # Enhanced optional fields (from _collect_query_metrics)
+                    # Enhanced optional fields (from AdditionalMetrics)
                     engine_type=engine,
                     executions_per_second=enhanced_metrics.get('executions_per_second'),
                     cpu_time=enhanced_metrics.get('cpu_time'),
@@ -618,7 +678,10 @@ class PerformanceInsightsCollector:
                     rows_examined=enhanced_metrics.get('rows_examined'),
                     rows_returned=enhanced_metrics.get('rows_returned'),
                     read_io_bytes=enhanced_metrics.get('read_io_bytes'),
-                    write_io_bytes=enhanced_metrics.get('write_io_bytes')
+                    write_io_bytes=enhanced_metrics.get('write_io_bytes'),
+                    read_io_time=enhanced_metrics.get('read_io_time'),  # NEW - Aurora PG 17+
+                    write_io_time=enhanced_metrics.get('write_io_time'),  # NEW - Aurora PG 17+
+                    rows_per_second=enhanced_metrics.get('rows_per_second')  # NEW - Aurora PG 17+
                 ))
                 
                 # Stop when we have enough unique queries
@@ -761,7 +824,19 @@ class PerformanceInsightsCollector:
             databases = []
             for key in dimension_keys[:limit]:
                 dimensions = key.get('Dimensions', {})
-                db_name = dimensions.get('db.name', 'Unknown')
+                
+                # Debug: Log the actual dimensions structure
+                logger.debug(f"Top database dimension key structure: {key}")
+                logger.debug(f"Dimensions: {dimensions}")
+                
+                # Try multiple possible key names for database
+                db_name = (
+                    dimensions.get('db.name') or
+                    dimensions.get('db.database') or
+                    dimensions.get('db.database.name') or
+                    key.get('db.name') or
+                    'Unknown'
+                )
                 
                 db_load = key.get('Total', 0.0)
                 load_pct = (db_load / total_load * 100) if total_load > 0 else 0.0
@@ -825,7 +900,18 @@ class PerformanceInsightsCollector:
             users = []
             for key in dimension_keys[:limit]:
                 dimensions = key.get('Dimensions', {})
-                user_name = dimensions.get('db.user', 'Unknown')
+                
+                # Debug: Log the actual dimensions structure
+                logger.debug(f"Top user dimension key structure: {key}")
+                logger.debug(f"Dimensions: {dimensions}")
+                
+                # Try multiple possible key names for user
+                user_name = (
+                    dimensions.get('db.user') or 
+                    dimensions.get('db.user.name') or
+                    key.get('db.user') or
+                    'Unknown'
+                )
                 
                 user_load = key.get('Total', 0.0)
                 load_pct = (user_load / total_load * 100) if total_load > 0 else 0.0
@@ -845,3 +931,187 @@ class PerformanceInsightsCollector:
         except Exception as e:
             logger.error(f"Unexpected error collecting top users: {e}")
             return []
+
+    def collect_os_metrics(
+        self,
+        instance_id: str,
+        time_range: TimeRange
+    ) -> Optional['OSMetrics']:
+        """
+        Collect OS-level performance metrics from Performance Insights.
+        
+        These metrics provide system-level insights including:
+        - CPU utilization (total, user, system, I/O wait)
+        - Memory usage (free, active, cached)
+        - Disk I/O (IOPS, latency, throughput, queue depth)
+        - Temp usage (blocks read/written)
+        - Swap usage
+        - Load average
+        
+        Args:
+            instance_id: RDS instance identifier
+            time_range: Time range for metric collection
+            
+        Returns:
+            OSMetrics object with collected metrics, or None if PI not enabled
+        """
+        from core.models import OSMetrics
+        
+        if not self.is_performance_insights_enabled(instance_id):
+            logger.warning(
+                f"Performance Insights not enabled for {instance_id}"
+            )
+            return None
+        
+        try:
+            # Get resource ID for PI API
+            resource_id = self.rds_client.get_instance_resource_id(instance_id)
+            
+            # Define OS metrics to collect (in smaller batches to avoid validation errors)
+            os_metric_names = [
+                # CPU metrics
+                'os.cpuUtilization.total.avg',
+                'os.cpuUtilization.user.avg',
+                'os.cpuUtilization.system.avg',
+                'os.cpuUtilization.wait.avg',  # I/O wait - key metric!
+                
+                # Memory metrics
+                'os.memory.free.avg',
+                'os.memory.active.avg',
+                'os.memory.cached.avg',
+                
+                # Disk I/O metrics - THE KEY METRICS
+                'os.diskIO.readIOsPS.avg',
+                'os.diskIO.writeIOsPS.avg',
+                'os.diskIO.readLatency.avg',
+                'os.diskIO.writeLatency.avg',
+                'os.diskIO.readKb.avg',
+                'os.diskIO.writeKb.avg',
+                'os.diskIO.diskQueueDepth.avg',
+                'os.diskIO.await.avg',
+                'os.diskIO.util.avg',
+                
+                # Load average
+                'os.loadAverageMinute.one.avg',
+                'os.loadAverageMinute.five.avg',
+            ]
+            
+            # Build metric queries
+            os_metric_queries = [{'Metric': name} for name in os_metric_names]
+            
+            logger.debug(f"Collecting {len(os_metric_queries)} OS metrics for {instance_id}")
+            
+            # Try to collect metrics - if validation fails, try individual metrics
+            try:
+                response = self.pi_client.get_resource_metrics(
+                    resource_id=resource_id,
+                    metric_queries=os_metric_queries,
+                    start_time=time_range.start,
+                    end_time=time_range.end
+                )
+            except AWSClientError as e:
+                if "Validation error" in str(e):
+                    logger.warning(f"Batch metric collection failed, trying individual metrics: {e}")
+                    # Try collecting metrics individually
+                    response = {'MetricList': []}
+                    for metric_query in os_metric_queries:
+                        try:
+                            single_response = self.pi_client.get_resource_metrics(
+                                resource_id=resource_id,
+                                metric_queries=[metric_query],
+                                start_time=time_range.start,
+                                end_time=time_range.end
+                            )
+                            response['MetricList'].extend(single_response.get('MetricList', []))
+                        except Exception as single_error:
+                            logger.debug(f"Failed to collect {metric_query['Metric']}: {single_error}")
+                            continue
+                else:
+                    raise
+            
+            # Parse response and extract average values
+            metrics_data = {}
+            
+            for metric_data in response.get('MetricList', []):
+                metric_key = metric_data.get('Key', {})
+                metric_name = metric_key.get('Metric')
+                
+                if not metric_name:
+                    continue
+                
+                # Get data points and calculate average
+                data_points = metric_data.get('DataPoints', [])
+                
+                if not data_points:
+                    logger.debug(f"No data points for OS metric '{metric_name}'")
+                    continue
+                
+                # Calculate average across time range
+                values = [dp.get('Value') for dp in data_points if 'Value' in dp]
+                
+                if values:
+                    avg_value = sum(values) / len(values)
+                    metrics_data[metric_name] = avg_value
+                    logger.debug(f"OS metric '{metric_name}': {avg_value:.2f}")
+            
+            # Build OSMetrics object
+            os_metrics = OSMetrics(
+                # CPU metrics
+                cpu_total=metrics_data.get('os.cpuUtilization.total.avg'),
+                cpu_user=metrics_data.get('os.cpuUtilization.user.avg'),
+                cpu_system=metrics_data.get('os.cpuUtilization.system.avg'),
+                cpu_wait=metrics_data.get('os.cpuUtilization.wait.avg'),
+                
+                # Memory metrics (convert bytes to GB)
+                memory_free_gb=self._bytes_to_gb(metrics_data.get('os.memory.free.avg')),
+                memory_active_gb=self._bytes_to_gb(metrics_data.get('os.memory.active.avg')),
+                memory_cached_gb=self._bytes_to_gb(metrics_data.get('os.memory.cached.avg')),
+                
+                # Disk I/O metrics
+                read_iops=metrics_data.get('os.diskIO.readIOsPS.avg'),
+                write_iops=metrics_data.get('os.diskIO.writeIOsPS.avg'),
+                read_latency_ms=metrics_data.get('os.diskIO.readLatency.avg'),
+                write_latency_ms=metrics_data.get('os.diskIO.writeLatency.avg'),
+                read_throughput_kbps=metrics_data.get('os.diskIO.readKb.avg'),
+                write_throughput_kbps=metrics_data.get('os.diskIO.writeKb.avg'),
+                disk_queue_depth=metrics_data.get('os.diskIO.diskQueueDepth.avg'),
+                disk_await_ms=metrics_data.get('os.diskIO.await.avg'),
+                disk_utilization_pct=metrics_data.get('os.diskIO.util.avg'),
+                
+                # Temp usage
+                temp_blocks_read=metrics_data.get('os.diskIO.tempBlksRead.avg'),
+                temp_blocks_written=metrics_data.get('os.diskIO.tempBlksWritten.avg'),
+                
+                # Swap metrics (convert bytes to GB)
+                swap_free_gb=self._bytes_to_gb(metrics_data.get('os.swap.free.avg')),
+                swap_in_rate=metrics_data.get('os.swap.in.avg'),
+                swap_out_rate=metrics_data.get('os.swap.out.avg'),
+                
+                # Load average
+                load_avg_1min=metrics_data.get('os.loadAverageMinute.one.avg'),
+                load_avg_5min=metrics_data.get('os.loadAverageMinute.five.avg'),
+            )
+            
+            logger.info(f"Successfully collected OS metrics for {instance_id}")
+            return os_metrics
+            
+        except AWSClientError as e:
+            logger.error(f"Failed to collect OS metrics: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error collecting OS metrics: {e}")
+            return None
+    
+    def _bytes_to_gb(self, bytes_value: Optional[float]) -> Optional[float]:
+        """
+        Convert bytes to gigabytes.
+        
+        Args:
+            bytes_value: Value in bytes
+            
+        Returns:
+            Value in GB, or None if input is None
+        """
+        if bytes_value is None:
+            return None
+        return bytes_value / (1024 ** 3)

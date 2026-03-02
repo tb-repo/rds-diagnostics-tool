@@ -149,16 +149,16 @@ def cli(ctx, profile, region, config, verbose):
     Examples:
     
       # List all RDS instances
-      rds-diag list --profile lt-prd
+      rds-diag --profile lt-prd list
       
       # Run diagnostics on an instance
-      rds-diag diagnose --instance my-db-instance --profile lt-prd
+      rds-diag --profile lt-prd diagnose --instance my-db-instance
       
       # Generate a technical report
-      rds-diag report --instance my-db --time-range 24h --report-type technical
+      rds-diag --profile lt-prd report --instance my-db --time-range 24h --report-type technical
       
       # Generate a management report in JSON format
-      rds-diag report --instance my-db --report-type management --format json -o report.json
+      rds-diag --profile lt-prd report --instance my-db --report-type management --format json -o report.json
     """
     # Setup logging
     setup_logging(verbose)
@@ -212,7 +212,7 @@ def list(ctx):
       rds-diag list
       
       # List instances in a specific account and region
-      rds-diag list --profile lt-prd --region us-east-1
+      rds-diag --profile lt-prd --region us-east-1 list
     """
     config = ctx.obj['config']
     verbose = ctx.obj['verbose']
@@ -278,11 +278,21 @@ def list(ctx):
 )
 @click.option(
     '--time-range', '-t',
-    default='1h',
-    help='Time range for metrics (e.g., "1h", "24h", "7d"). Default: 1h'
+    default=None,
+    help='Time range for metrics (e.g., "1h", "24h", "7d"). Mutually exclusive with --start-time/--end-time'
+)
+@click.option(
+    '--start-time',
+    default=None,
+    help='Start time (e.g., "2026-03-02T10:00:00", "2026-03-02 10:00", "2026-03-02"). Requires --end-time'
+)
+@click.option(
+    '--end-time',
+    default=None,
+    help='End time (e.g., "2026-03-02T14:00:00", "2026-03-02 14:00", "2026-03-02"). Requires --start-time'
 )
 @click.pass_context
-def diagnose(ctx, instance, time_range):
+def diagnose(ctx, instance, time_range, start_time, end_time):
     """
     Run diagnostics on a specific RDS instance.
     
@@ -295,10 +305,16 @@ def diagnose(ctx, instance, time_range):
       rds-diag diagnose --instance my-db-instance
       
       # Run diagnostics for the last 24 hours
-      rds-diag diagnose --instance my-db --time-range 24h --profile lt-prd
+      rds-diag --profile lt-prd diagnose --instance my-db --time-range 24h
       
       # Run diagnostics for the last 7 days with verbose output
-      rds-diag diagnose -i my-db -t 7d --verbose
+      rds-diag --verbose diagnose -i my-db -t 7d
+      
+      # Run diagnostics for specific time range
+      rds-diag diagnose --instance my-db --start-time "2026-03-02 09:00" --end-time "2026-03-02 17:00"
+      
+      # Run diagnostics for specific date (full day)
+      rds-diag diagnose --instance my-db --start-time "2026-03-01" --end-time "2026-03-02"
     """
     config = ctx.obj['config']
     verbose = ctx.obj['verbose']
@@ -314,23 +330,56 @@ def diagnose(ctx, instance, time_range):
         )
         ctx.exit(EXIT_ERROR)
     
+    # Validate time range options
+    if (start_time or end_time) and time_range:
+        click.echo(
+            "\nERROR: Cannot use both --time-range and --start-time/--end-time options together.",
+            err=True
+        )
+        click.echo("Use either --time-range OR --start-time with --end-time.", err=True)
+        ctx.exit(EXIT_ERROR)
+    
+    if (start_time and not end_time) or (end_time and not start_time):
+        click.echo(
+            "\nERROR: Both --start-time and --end-time must be specified together.",
+            err=True
+        )
+        ctx.exit(EXIT_ERROR)
+    
+    # Default to 1h if no time options specified
+    if not time_range and not start_time and not end_time:
+        time_range = '1h'
+    
     if verbose:
         click.echo(f"Running diagnostics for instance: {instance}")
-        click.echo(f"Time range: {time_range}")
+        if time_range:
+            click.echo(f"Time range: {time_range}")
+        else:
+            click.echo(f"Start time: {start_time}")
+            click.echo(f"End time: {end_time}")
         click.echo(f"Region: {config.default_region}")
         if config.aws_profile:
             click.echo(f"AWS profile: {config.aws_profile}")
     
     try:
-        # Validate time range format
+        # Parse time range
         try:
-            time_range_obj = TimeRange.from_duration(time_range)
+            if time_range:
+                time_range_obj = TimeRange.from_duration(time_range)
+            else:
+                time_range_obj = TimeRange.from_timestamps(start_time, end_time)
         except ValueError as e:
             click.echo(f"\nERROR: {e}", err=True)
-            click.echo(
-                "\nSupported formats: <number><m|h|d> (e.g., '15m', '1h', '24h', '7d')",
-                err=True
-            )
+            if time_range:
+                click.echo(
+                    "\nSupported formats: <number><m|h|d> (e.g., '15m', '1h', '24h', '7d')",
+                    err=True
+                )
+            else:
+                click.echo(
+                    "\nSupported formats: '2026-03-02T10:00:00', '2026-03-02 10:00', or '2026-03-02'",
+                    err=True
+                )
             ctx.exit(EXIT_ERROR)
         
         # Initialize application
@@ -421,8 +470,18 @@ def diagnose(ctx, instance, time_range):
 )
 @click.option(
     '--time-range', '-t',
-    default='1h',
-    help='Time range for metrics (e.g., "1h", "24h", "7d"). Default: 1h'
+    default=None,
+    help='Time range for metrics (e.g., "1h", "24h", "7d"). Mutually exclusive with --start-time/--end-time'
+)
+@click.option(
+    '--start-time',
+    default=None,
+    help='Start time (e.g., "2026-03-02T10:00:00", "2026-03-02 10:00", "2026-03-02"). Requires --end-time'
+)
+@click.option(
+    '--end-time',
+    default=None,
+    help='End time (e.g., "2026-03-02T14:00:00", "2026-03-02 14:00", "2026-03-02"). Requires --start-time'
 )
 @click.option(
     '--report-type',
@@ -448,7 +507,7 @@ def diagnose(ctx, instance, time_range):
     help='Overwrite output file without confirmation'
 )
 @click.pass_context
-def report(ctx, instance, time_range, report_type, format, output, force):
+def report(ctx, instance, time_range, start_time, end_time, report_type, format, output, force):
     """
     Generate a formatted report for an RDS instance.
     
@@ -468,6 +527,12 @@ def report(ctx, instance, time_range, report_type, format, output, force):
       
       # Generate management report for 7 days and save as JSON
       rds-diag report -i my-db -t 7d --report-type management -f json -o report.json
+      
+      # Generate report for specific time range
+      rds-diag report -i my-db --start-time "2026-03-02 09:00" --end-time "2026-03-02 17:00" -o report.txt
+      
+      # Generate report for specific date (full day)
+      rds-diag report -i my-db --start-time "2026-03-01" --end-time "2026-03-02" -o daily-report.txt
     """
     config = ctx.obj['config']
     verbose = ctx.obj['verbose']
@@ -483,23 +548,56 @@ def report(ctx, instance, time_range, report_type, format, output, force):
         )
         ctx.exit(EXIT_ERROR)
     
+    # Validate time range options
+    if (start_time or end_time) and time_range:
+        click.echo(
+            "\nERROR: Cannot use both --time-range and --start-time/--end-time options together.",
+            err=True
+        )
+        click.echo("Use either --time-range OR --start-time with --end-time.", err=True)
+        ctx.exit(EXIT_ERROR)
+    
+    if (start_time and not end_time) or (end_time and not start_time):
+        click.echo(
+            "\nERROR: Both --start-time and --end-time must be specified together.",
+            err=True
+        )
+        ctx.exit(EXIT_ERROR)
+    
+    # Default to 1h if no time options specified
+    if not time_range and not start_time and not end_time:
+        time_range = '1h'
+    
     if verbose:
         click.echo(f"Generating {report_type} report for instance: {instance}")
-        click.echo(f"Time range: {time_range}")
+        if time_range:
+            click.echo(f"Time range: {time_range}")
+        else:
+            click.echo(f"Start time: {start_time}")
+            click.echo(f"End time: {end_time}")
         click.echo(f"Output format: {format}")
         if output:
             click.echo(f"Output file: {output}")
     
     try:
-        # Validate time range format
+        # Parse time range
         try:
-            time_range_obj = TimeRange.from_duration(time_range)
+            if time_range:
+                time_range_obj = TimeRange.from_duration(time_range)
+            else:
+                time_range_obj = TimeRange.from_timestamps(start_time, end_time)
         except ValueError as e:
             click.echo(f"\nERROR: {e}", err=True)
-            click.echo(
-                "\nSupported formats: <number><m|h|d> (e.g., '15m', '1h', '24h', '7d')",
-                err=True
-            )
+            if time_range:
+                click.echo(
+                    "\nSupported formats: <number><m|h|d> (e.g., '15m', '1h', '24h', '7d')",
+                    err=True
+                )
+            else:
+                click.echo(
+                    "\nSupported formats: '2026-03-02T10:00:00', '2026-03-02 10:00', or '2026-03-02'",
+                    err=True
+                )
             ctx.exit(EXIT_ERROR)
         
         # Parse report type and format
@@ -587,7 +685,7 @@ def check_permissions(ctx):
       rds-diag check-permissions
       
       # Check permissions for specific profile
-      rds-diag check-permissions --profile lt-prd
+      rds-diag --profile lt-prd check-permissions
     """
     from aws.permissions import PermissionValidator
     import json

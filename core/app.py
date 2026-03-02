@@ -122,6 +122,7 @@ class RDSDiagnosticsApp:
             wait_events = None
             top_databases = None
             top_users = None
+            os_metrics = None
             
             if self.pi_collector.is_performance_insights_enabled(instance_id):
                 logger.info("Collecting Performance Insights data...")
@@ -142,6 +143,12 @@ class RDSDiagnosticsApp:
                         instance_id,
                         time_range
                     )
+                    # Collect OS-level metrics
+                    logger.info("Collecting OS-level metrics from Performance Insights...")
+                    os_metrics = self.pi_collector.collect_os_metrics(
+                        instance_id,
+                        time_range
+                    )
                 except AWSClientError as e:
                     logger.warning(f"Failed to collect Performance Insights data: {e}")
                     # Continue without PI data
@@ -156,7 +163,8 @@ class RDSDiagnosticsApp:
             logger.info("Generating recommendations...")
             recommendations = self.analyzer.generate_recommendations(
                 analysis,
-                pi_queries or []
+                pi_queries or [],
+                os_metrics
             )
             
             # Create diagnostic data
@@ -167,6 +175,7 @@ class RDSDiagnosticsApp:
                 wait_events=wait_events,
                 top_databases=top_databases,
                 top_users=top_users,
+                os_metrics=os_metrics,
                 analysis=analysis,
                 recommendations=recommendations,
                 collection_timestamp=cloudwatch_metrics.collection_time

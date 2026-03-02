@@ -52,6 +52,116 @@ rds-diag list --profile your-profile
 # If successful, you should see a list of RDS instances
 ```
 
+### 5. Verify IAM Permissions
+
+```bash
+# Check if you have the required IAM permissions
+rds-diag check-permissions --profile your-profile
+
+# This will verify:
+# - RDS describe permissions
+# - CloudWatch metrics permissions
+# - Performance Insights permissions (for enhanced SQL metrics)
+```
+
+## Required IAM Permissions
+
+The tool requires specific IAM permissions to function properly. Create an IAM policy with these permissions:
+
+### Minimum Required Permissions
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:GetMetricData"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### Recommended Permissions (Includes Enhanced SQL Metrics)
+
+For full functionality including enhanced SQL performance analysis:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:GetMetricData",
+        "pi:DescribeDimensionKeys",
+        "pi:GetResourceMetrics"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### Permission Details
+
+| Permission | Purpose | Required For |
+|------------|---------|--------------|
+| `rds:DescribeDBInstances` | List and describe RDS instances | All commands |
+| `rds:DescribeDBClusters` | List and describe RDS clusters | All commands |
+| `cloudwatch:GetMetricStatistics` | Retrieve CloudWatch metrics | Metrics collection |
+| `cloudwatch:GetMetricData` | Retrieve CloudWatch metric data | Metrics collection |
+| `pi:DescribeDimensionKeys` | Identify top SQL queries | SQL analysis |
+| `pi:GetResourceMetrics` | Retrieve detailed SQL metrics | Enhanced SQL metrics |
+
+**Note:** The tool will work without Performance Insights permissions (`pi:*`) but will skip SQL query analysis and enhanced metrics collection.
+
+### Creating the IAM Policy
+
+1. **Via AWS Console:**
+   - Go to IAM Console → Policies → Create Policy
+   - Select JSON tab
+   - Paste the policy JSON above
+   - Name it `RDSDiagnosticsToolPolicy`
+   - Click Create Policy
+   - Attach to your IAM user or role
+
+2. **Via AWS CLI:**
+   ```bash
+   # Create policy from file
+   aws iam create-policy \
+     --policy-name RDSDiagnosticsToolPolicy \
+     --policy-document file://iam-policy.json
+   
+   # Attach to user
+   aws iam attach-user-policy \
+     --user-name your-username \
+     --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/RDSDiagnosticsToolPolicy
+   ```
+
+### Verifying Permissions
+
+After attaching the policy, verify permissions:
+
+```bash
+# Check permissions
+rds-diag check-permissions --profile your-profile
+
+# Expected output:
+# ✓ RDS permissions: OK
+# ✓ CloudWatch permissions: OK
+# ✓ Performance Insights permissions: OK
+```
+
 ## Installation with Development Dependencies
 
 If you plan to contribute or run tests:

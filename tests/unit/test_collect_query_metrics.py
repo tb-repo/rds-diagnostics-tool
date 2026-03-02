@@ -291,13 +291,9 @@ class TestCollectQueryMetrics:
         metric_queries = call_args[1]['metric_queries']
         assert len(metric_queries) > 0
         
-        # Verify query structure
+        # Verify query structure (simplified - no GroupBy or Filter)
         for query in metric_queries:
             assert 'Metric' in query
-            assert 'GroupBy' in query
-            assert query['GroupBy']['Group'] == 'db.sql'
-            assert 'Filter' in query
-            assert query['Filter']['db.sql.id'] == 'sql-abc123'
     
     def test_collect_query_metrics_property_4_api_data_preservation(self, collector, time_range):
         """

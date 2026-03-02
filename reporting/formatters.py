@@ -77,7 +77,7 @@ class TechnicalReportFormatter:
             lines.append("THRESHOLD VIOLATIONS")
             lines.append("-" * 80)
             for violation in analysis.violations:
-                severity_marker = "🔴" if violation.severity == Severity.CRITICAL else "⚠️"
+                severity_marker = "[!]" if violation.severity == Severity.CRITICAL else "[*]"
                 lines.append(f"{severity_marker} {violation.severity.value.upper()}: {violation.message}")
                 lines.append(f"   Metric: {violation.metric_name}")
                 lines.append(f"   Current: {violation.current_value:.2f}")
@@ -87,7 +87,7 @@ class TechnicalReportFormatter:
         else:
             lines.append("THRESHOLD VIOLATIONS")
             lines.append("-" * 80)
-            lines.append("✓ No threshold violations detected")
+            lines.append("[OK] No threshold violations detected")
             lines.append("")
         
         # CloudWatch Metrics
@@ -186,31 +186,153 @@ class TechnicalReportFormatter:
             lines.append("METRIC TRENDS")
             lines.append("-" * 80)
             for trend in analysis.trends:
-                trend_icon = "📈" if trend.trend == Trend.DEGRADING else "📉" if trend.trend == Trend.IMPROVING else "➡️"
+                trend_icon = "[^]" if trend.trend == Trend.DEGRADING else "[v]" if trend.trend == Trend.IMPROVING else "[-]"
                 lines.append(f"{trend_icon} {trend.description}")
             lines.append("")
         
-        # Performance Insights
+        # Performance Insights - Enhanced SQL Metrics
         if diagnostic_data.performance_insights_queries:
             lines.append("TOP SQL QUERIES (Performance Insights)")
             lines.append("-" * 80)
-            lines.append("Note: Values represent database load (Average Active Sessions)")
+            lines.append("Note: Queries sorted by total execution time (highest impact first)")
             lines.append("")
-            for i, query in enumerate(diagnostic_data.performance_insights_queries[:10], 1):
-                lines.append(f"{i}. Query ID: {query.query_id}")
-                lines.append(f"   Total Load: {query.total_execution_time:.2f} AAS")
-                lines.append(f"   Average Load: {query.average_execution_time:.4f} AAS")
-                lines.append(f"   Time Samples: {query.execution_count}")
-                if query.wait_events:
-                    lines.append(f"   Wait Events: {', '.join(query.wait_events)}")
-                # Truncate long queries
-                query_text = query.query_text[:200] + "..." if len(query.query_text) > 200 else query.query_text
-                lines.append(f"   SQL: {query_text}")
+            
+            # Sort queries by total execution time (descending)
+            sorted_queries = sorted(
+                diagnostic_data.performance_insights_queries[:10],
+                key=lambda q: q.total_execution_time,
+                reverse=True
+            )
+            
+            for i, query in enumerate(sorted_queries, 1):
+                lines.append(f"{'=' * 80}")
+                lines.append(f"Query #{i}: {query.query_id}")
+                lines.append(f"{'=' * 80}")
+                
+                # SQL Text (with proper formatting for long queries)
+                lines.append("SQL Text:")
+                if len(query.query_text) > 500:
+                    # Show first 500 chars with continuation indicator
+                    lines.append(f"  {query.query_text[:500]}")
+                    lines.append(f"  ... (truncated, {len(query.query_text)} total characters)")
+                else:
+                    # Show full query, handle multi-line
+                    for line in query.query_text.split('\n'):
+                        lines.append(f"  {line}")
                 lines.append("")
+                
+                # Engine Type
+                if query.engine_type:
+                    lines.append(f"Engine: {query.engine_type}")
+                    lines.append("")
+                
+                # Execution Metrics
+                lines.append("Execution Metrics:")
+                lines.append(f"  Total Load:             {query.total_execution_time:.2f} AAS (Average Active Sessions)")
+                lines.append(f"  Average Load:           {query.average_execution_time:.2f} AAS per time bucket")
+                lines.append(f"  Time Buckets:           {query.execution_count} (5-minute intervals)")
+                
+                if query.executions_per_second is not None:
+                    lines.append(f"  Executions/sec:         {query.executions_per_second:.2f} calls/sec")
+                lines.append("")
+                
+                # Check if any per-query execution metrics are available
+                has_resource_metrics = query.cpu_time is not None or query.lock_time is not None
+                has_row_metrics = (query.rows_examined is not None or 
+                                  query.rows_returned is not None or 
+                                  query.rows_per_second is not None)
+                has_io_metrics = (query.read_io_bytes is not None or 
+                                 query.write_io_bytes is not None or 
+                                 query.read_io_time is not None or 
+                                 query.write_io_time is not None)
+                
+                # Only show sections if at least one metric is available
+                if has_resource_metrics:
+                    lines.append("Resource Metrics:")
+                    if query.cpu_time is not None:
+                        cpu_pct = (query.cpu_time / query.total_execution_time * 100) if query.total_execution_time > 0 else 0
+                        lines.append(f"  CPU Time:               {query.cpu_time:.2f} ms ({cpu_pct:.1f}% of total)")
+                    
+                    if query.lock_time is not None:
+                        lock_pct = (query.lock_time / query.total_execution_time * 100) if query.total_execution_time > 0 else 0
+                        lines.append(f"  Lock Time:              {query.lock_time:.2f} ms ({lock_pct:.1f}% of total)")
+                    lines.append("")
+                
+                if has_row_metrics:
+                    lines.append("Row Metrics:")
+                    if query.rows_examined is not None:
+                        lines.append(f"  Rows Examined:          {query.rows_examined:,}")
+                    
+                    if query.rows_returned is not None:
+                        lines.append(f"  Rows Returned:          {query.rows_returned:,}")
+                    
+                    # Calculate and display efficiency ratio
+                    if query.rows_examined is not None and query.rows_returned is not None and query.rows_examined > 0:
+                        efficiency = (query.rows_returned / query.rows_examined) * 100
+                        lines.append(f"  Efficiency Ratio:       {efficiency:.2f}%")
+                        if efficiency < 1.0:
+                            lines.append(f"                          [!] Low efficiency - consider adding indexes")
+                        elif efficiency < 10.0:
+                            lines.append(f"                          [!] Poor selectivity - review query optimization")
+                    
+                    # Rows per second (Aurora PostgreSQL 17+)
+                    if query.rows_per_second is not None:
+                        lines.append(f"  Rows/sec:               {query.rows_per_second:.2f}")
+                    
+                    lines.append("")
+                
+                if has_io_metrics:
+                    lines.append("I/O Metrics:")
+                    if query.read_io_bytes is not None:
+                        read_mb = query.read_io_bytes / (1024 * 1024)
+                        lines.append(f"  Read I/O:               {read_mb:.2f} MB")
+                    
+                    if query.write_io_bytes is not None:
+                        write_mb = query.write_io_bytes / (1024 * 1024)
+                        lines.append(f"  Write I/O:              {write_mb:.2f} MB")
+                    
+                    # I/O Time Metrics (Aurora PostgreSQL 17+)
+                    if query.read_io_time is not None:
+                        read_time_sec = query.read_io_time / 1000  # Convert ms to seconds
+                        lines.append(f"  Read I/O Time:          {query.read_io_time:.2f} ms ({read_time_sec:.2f} sec)")
+                        if query.read_io_time > 10000:  # More than 10 seconds
+                            lines.append(f"                          [!] CRITICAL: Extremely high read latency!")
+                        elif query.read_io_time > 1000:  # More than 1 second
+                            lines.append(f"                          [*] WARNING: High read latency")
+                    
+                    if query.write_io_time is not None:
+                        write_time_sec = query.write_io_time / 1000  # Convert ms to seconds
+                        lines.append(f"  Write I/O Time:         {query.write_io_time:.2f} ms ({write_time_sec:.2f} sec)")
+                        if query.write_io_time > 10000:  # More than 10 seconds
+                            lines.append(f"                          [!] CRITICAL: Extremely high write latency!")
+                        elif query.write_io_time > 1000:  # More than 1 second
+                            lines.append(f"                          [*] WARNING: High write latency")
+                    
+                    lines.append("")
+                
+                # Add explanatory note if no per-query execution metrics are available
+                if not (has_resource_metrics or has_row_metrics or has_io_metrics):
+                    lines.append("Note: Per-query execution metrics (CPU time, lock time, rows, I/O time)")
+                    lines.append("      are not available from Performance Insights API for Aurora PostgreSQL.")
+                    lines.append("      See 'OS-LEVEL PERFORMANCE METRICS' section below for system-wide")
+                    lines.append("      CPU, memory, and disk I/O performance data.")
+                    lines.append("")
+                
+                # Wait Events (if available)
+                if query.wait_events:
+                    lines.append(f"Wait Events: {', '.join(query.wait_events)}")
+                    lines.append("")
+                
+                # Rows Affected (if available)
+                if query.rows_affected is not None:
+                    lines.append(f"Rows Affected: {query.rows_affected:,}")
+                    lines.append("")
         else:
             lines.append("TOP SQL QUERIES (Performance Insights)")
             lines.append("-" * 80)
             lines.append("Performance Insights data not available")
+            lines.append("To enable enhanced SQL metrics, ensure Performance Insights is enabled")
+            lines.append("on your RDS instance.")
             lines.append("")
         
         # Wait Events
@@ -241,6 +363,110 @@ class TechnicalReportFormatter:
                 lines.append(f"{i}. {user.user_name}")
                 lines.append(f"   Total Load: {user.total_load:.2f} AAS")
                 lines.append(f"   Load %: {user.load_percentage:.1f}%")
+                lines.append("")
+        
+        # OS-Level Metrics from Performance Insights
+        if diagnostic_data.os_metrics:
+            lines.append("OS-LEVEL PERFORMANCE METRICS (Performance Insights)")
+            lines.append("-" * 80)
+            os_m = diagnostic_data.os_metrics
+            
+            # CPU Metrics
+            lines.append("CPU:")
+            if os_m.cpu_total is not None:
+                lines.append(f"  Total Utilization:  {os_m.cpu_total:.1f}%")
+            if os_m.cpu_user is not None:
+                lines.append(f"  User Space:         {os_m.cpu_user:.1f}%")
+            if os_m.cpu_system is not None:
+                lines.append(f"  System/Kernel:      {os_m.cpu_system:.1f}%")
+            if os_m.cpu_wait is not None:
+                wait_indicator = "  [*] HIGH" if os_m.cpu_wait > 10 else ""
+                lines.append(f"  I/O Wait:           {os_m.cpu_wait:.1f}%{wait_indicator}")
+                if os_m.cpu_wait > 10:
+                    lines.append(f"     -> Database is waiting for disk I/O")
+            lines.append("")
+            
+            # Memory Metrics
+            lines.append("Memory:")
+            if os_m.memory_free_gb is not None:
+                lines.append(f"  Free:               {os_m.memory_free_gb:.2f} GB")
+            if os_m.memory_active_gb is not None:
+                lines.append(f"  Active:             {os_m.memory_active_gb:.2f} GB")
+            if os_m.memory_cached_gb is not None:
+                lines.append(f"  Cached:             {os_m.memory_cached_gb:.2f} GB")
+            lines.append("")
+            
+            # Disk I/O Metrics - THE KEY SECTION
+            lines.append("Disk I/O:")
+            if os_m.read_iops is not None:
+                lines.append(f"  Read IOPS:          {os_m.read_iops:.1f}")
+            if os_m.write_iops is not None:
+                lines.append(f"  Write IOPS:         {os_m.write_iops:.1f}")
+            
+            # Latency - with warnings
+            if os_m.read_latency_ms is not None:
+                latency_indicator = "  [*] HIGH" if os_m.read_latency_ms > 10 else ""
+                lines.append(f"  Read Latency:       {os_m.read_latency_ms:.2f} ms{latency_indicator}")
+                if os_m.read_latency_ms > 10:
+                    lines.append(f"     -> Slow disk reads detected")
+            
+            if os_m.write_latency_ms is not None:
+                latency_indicator = "  [*] HIGH" if os_m.write_latency_ms > 10 else ""
+                lines.append(f"  Write Latency:      {os_m.write_latency_ms:.2f} ms{latency_indicator}")
+                if os_m.write_latency_ms > 10:
+                    lines.append(f"     -> Slow disk writes detected")
+            
+            # Throughput
+            if os_m.read_throughput_kbps is not None:
+                lines.append(f"  Read Throughput:    {os_m.read_throughput_kbps:.1f} KB/s ({os_m.read_throughput_kbps/1024:.2f} MB/s)")
+            if os_m.write_throughput_kbps is not None:
+                lines.append(f"  Write Throughput:   {os_m.write_throughput_kbps:.1f} KB/s ({os_m.write_throughput_kbps/1024:.2f} MB/s)")
+            
+            # Queue depth - important indicator
+            if os_m.disk_queue_depth is not None:
+                queue_indicator = "  [*] I/O BOTTLENECK" if os_m.disk_queue_depth > 2 else ""
+                lines.append(f"  Queue Depth:        {os_m.disk_queue_depth:.2f}{queue_indicator}")
+                if os_m.disk_queue_depth > 2:
+                    lines.append(f"     -> Queries are waiting for disk access")
+            
+            if os_m.disk_utilization_pct is not None:
+                lines.append(f"  Disk Utilization:   {os_m.disk_utilization_pct:.1f}%")
+            lines.append("")
+            
+            # Temp Usage (PostgreSQL specific)
+            if os_m.temp_blocks_read is not None or os_m.temp_blocks_written is not None:
+                lines.append("Temp Usage:")
+                if os_m.temp_blocks_read is not None:
+                    temp_indicator = "  [*] HIGH" if os_m.temp_blocks_read > 1000 else ""
+                    lines.append(f"  Temp Blocks Read:   {os_m.temp_blocks_read:.0f}{temp_indicator}")
+                if os_m.temp_blocks_written is not None:
+                    temp_indicator = "  [*] HIGH" if os_m.temp_blocks_written > 1000 else ""
+                    lines.append(f"  Temp Blocks Written: {os_m.temp_blocks_written:.0f}{temp_indicator}")
+                    if os_m.temp_blocks_written > 1000:
+                        lines.append(f"     -> Queries spilling to disk - consider increasing work_mem")
+                lines.append("")
+            
+            # Swap Usage
+            if os_m.swap_free_gb is not None or os_m.swap_out_rate is not None:
+                lines.append("Swap:")
+                if os_m.swap_free_gb is not None:
+                    lines.append(f"  Free Swap:          {os_m.swap_free_gb:.2f} GB")
+                if os_m.swap_in_rate is not None:
+                    lines.append(f"  Swap In Rate:       {os_m.swap_in_rate:.2f} MB/s")
+                if os_m.swap_out_rate is not None:
+                    swap_indicator = "  [!] CRITICAL" if os_m.swap_out_rate > 0 else ""
+                    lines.append(f"  Swap Out Rate:      {os_m.swap_out_rate:.2f} MB/s{swap_indicator}")
+                    if os_m.swap_out_rate > 0:
+                        lines.append(f"     -> System is swapping - memory pressure detected")
+                lines.append("")
+            
+            # Load Average
+            if os_m.load_avg_1min is not None or os_m.load_avg_5min is not None:
+                lines.append("Load Average:")
+                if os_m.load_avg_1min is not None:
+                    lines.append(f"  1-minute:           {os_m.load_avg_1min:.2f}")
+                if os_m.load_avg_5min is not None:
+                    lines.append(f"  5-minute:           {os_m.load_avg_5min:.2f}")
                 lines.append("")
         
         # Recommendations
@@ -411,11 +637,11 @@ class ManagementReportFormatter:
         lines.append("-" * 70)
         severity = diagnostic_data.analysis.overall_severity
         if severity == Severity.CRITICAL:
-            lines.append("Status: 🔴 CRITICAL - Immediate Action Required")
+            lines.append("Status: [!] CRITICAL - Immediate Action Required")
         elif severity == Severity.WARNING:
-            lines.append("Status: ⚠️  WARNING - Attention Needed")
+            lines.append("Status: [*] WARNING - Attention Needed")
         else:
-            lines.append("Status: ✓ NORMAL - No Issues Detected")
+            lines.append("Status: [OK] NORMAL - No Issues Detected")
         lines.append("")
         
         # Key Findings
@@ -450,6 +676,17 @@ class ManagementReportFormatter:
                 trend_icon = "↑" if trend.trend == Trend.DEGRADING else "↓" if trend.trend == Trend.IMPROVING else "→"
                 lines.append(f"  {trend.metric_name}: {trend_icon} {abs(trend.change_percentage):.0f}%")
         lines.append("")
+        
+        # SQL Performance Summary (if Performance Insights available)
+        if diagnostic_data.performance_insights_queries:
+            sql_summary = ManagementReportFormatter.format_sql_performance_summary(
+                diagnostic_data.performance_insights_queries,
+                diagnostic_data.recommendations
+            )
+            lines.append("SQL PERFORMANCE SUMMARY")
+            lines.append("-" * 70)
+            lines.append(sql_summary)
+            lines.append("")
         
         # Recommendations
         rec_text = ManagementReportFormatter.format_recommendations(
@@ -564,5 +801,106 @@ class ManagementReportFormatter:
             lines.append("Additional Recommendations:")
             for i, rec in enumerate(other_recs, 1):
                 lines.append(f"  {i}. {rec}")
+        
+        return "\n".join(lines)
+    
+    @staticmethod
+    def format_sql_performance_summary(queries: List[SQLQuery], recommendations: List[str]) -> str:
+        """
+        Format SQL performance summary for management report.
+        
+        Args:
+            queries: List of SQL queries
+            recommendations: List of all recommendations
+            
+        Returns:
+            Formatted SQL performance summary
+        """
+        lines = []
+        
+        # Count queries analyzed
+        lines.append(f"Queries Analyzed: {len(queries)}")
+        lines.append("")
+        
+        # Extract SQL-specific recommendations
+        sql_recs = [r for r in recommendations if any(
+            keyword in r for keyword in ['[INDEX]', '[LOCK]', '[CPU]', '[CACHE]', 'Query', 'SQL']
+        )]
+        
+        if sql_recs:
+            # Count by severity
+            critical_sql = [r for r in sql_recs if 'CRITICAL' in r or '[INDEX]' in r]
+            warning_sql = [r for r in sql_recs if 'WARNING' in r or '[LOCK]' in r or '[CPU]' in r]
+            
+            lines.append(f"SQL Issues Identified: {len(sql_recs)}")
+            if critical_sql:
+                lines.append(f"  • Critical: {len(critical_sql)} (require immediate attention)")
+            if warning_sql:
+                lines.append(f"  • Warnings: {len(warning_sql)} (should be addressed)")
+            lines.append("")
+            
+            # Show top 3 problematic queries
+            lines.append("Top Problematic Queries:")
+            
+            # Sort queries by total execution time (highest impact)
+            sorted_queries = sorted(queries[:10], key=lambda q: q.total_execution_time, reverse=True)
+            
+            for i, query in enumerate(sorted_queries[:3], 1):
+                lines.append(f"  {i}. Query {query.query_id}")
+                lines.append(f"     Total Time: {query.total_execution_time:.2f} ms")
+                
+                # Add specific issues for this query
+                issues = []
+                
+                # Check for index opportunity
+                if query.rows_examined and query.rows_returned and query.rows_examined > 0:
+                    efficiency = (query.rows_returned / query.rows_examined) * 100
+                    if efficiency < 10:
+                        issues.append(f"Low efficiency ({efficiency:.1f}%) - needs indexing")
+                
+                # Check for lock contention
+                if query.lock_time and query.total_execution_time > 0:
+                    lock_pct = (query.lock_time / query.total_execution_time) * 100
+                    if lock_pct > 30:
+                        issues.append(f"High lock contention ({lock_pct:.1f}%)")
+                
+                # Check for CPU intensity
+                if query.cpu_time and query.total_execution_time > 0:
+                    cpu_pct = (query.cpu_time / query.total_execution_time) * 100
+                    if cpu_pct > 80:
+                        issues.append(f"CPU-intensive ({cpu_pct:.1f}%)")
+                
+                # Check for high frequency
+                if query.executions_per_second and query.executions_per_second > 10:
+                    issues.append(f"Very high frequency ({query.executions_per_second:.1f} calls/sec)")
+                
+                if issues:
+                    lines.append(f"     Issues: {'; '.join(issues)}")
+                
+                # Show truncated SQL
+                sql_preview = query.query_text[:60].replace('\n', ' ')
+                if len(query.query_text) > 60:
+                    sql_preview += "..."
+                lines.append(f"     SQL: {sql_preview}")
+                lines.append("")
+            
+            # Key recommendations summary
+            lines.append("Key SQL Recommendations:")
+            index_count = len([r for r in sql_recs if '[INDEX]' in r])
+            lock_count = len([r for r in sql_recs if '[LOCK]' in r])
+            cpu_count = len([r for r in sql_recs if '[CPU]' in r])
+            cache_count = len([r for r in sql_recs if '[CACHE]' in r])
+            
+            if index_count > 0:
+                lines.append(f"  • {index_count} queries need index optimization")
+            if lock_count > 0:
+                lines.append(f"  • {lock_count} queries have lock contention issues")
+            if cpu_count > 0:
+                lines.append(f"  • {cpu_count} queries are CPU-intensive")
+            if cache_count > 0:
+                lines.append(f"  • {cache_count} queries are caching candidates")
+        else:
+            lines.append("No significant SQL performance issues detected.")
+            lines.append("All queries are performing within acceptable parameters.")
         
         return "\n".join(lines)

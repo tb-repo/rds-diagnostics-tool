@@ -1,7 +1,7 @@
 """Diagnostic analysis engine."""
 
 import logging
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from core.config import MetricThresholds
@@ -285,7 +285,8 @@ class DiagnosticAnalyzer:
     def generate_recommendations(
         self,
         analysis: MetricAnalysis,
-        queries: List[SQLQuery]
+        queries: List[SQLQuery],
+        os_metrics: Optional['OSMetrics'] = None
     ) -> List[str]:
         """
         Generate actionable recommendations based on analysis.
@@ -293,6 +294,7 @@ class DiagnosticAnalyzer:
         Args:
             analysis: Metric analysis results
             queries: Top SQL queries (if available)
+            os_metrics: OS-level metrics from Performance Insights (if available)
             
         Returns:
             List of recommendation strings
@@ -395,6 +397,16 @@ class DiagnosticAnalyzer:
                         "Review execution plans and add appropriate indexes."
                     )
         
+        # OS metrics recommendations
+        if os_metrics:
+            os_recommendations = self.analyze_os_metrics(os_metrics)
+            if os_recommendations:
+                recommendations.append(
+                    f"\n=== OS-Level Performance Recommendations ({len(os_recommendations)} issues found) ==="
+                )
+                for rec in os_recommendations:
+                    recommendations.append(f"  • {rec}")
+        
         if not recommendations:
             recommendations.append(
                 "No immediate action required. All metrics are within normal thresholds."
@@ -432,6 +444,84 @@ class DiagnosticAnalyzer:
             summary += f" {len(degrading_trends)} metrics show increasing trends."
         
         return summary
+    
+    def analyze_os_metrics(self, os_metrics: 'OSMetrics') -> List[str]:
+        """
+        Analyze OS-level metrics and generate recommendations.
+        
+        Args:
+            os_metrics: OS metrics from Performance Insights
+            
+        Returns:
+            List of OS-specific recommendations
+        """
+        recommendations = []
+        
+        # High I/O wait
+        if os_metrics.cpu_wait and os_metrics.cpu_wait > 10:
+            recommendations.append(
+                f"High I/O wait detected ({os_metrics.cpu_wait:.1f}%). "
+                "Database is waiting for disk I/O. Check disk latency metrics and consider faster storage."
+            )
+        
+        # High disk read latency
+        if os_metrics.read_latency_ms and os_metrics.read_latency_ms > 10:
+            severity = "CRITICAL" if os_metrics.read_latency_ms > 20 else "WARNING"
+            recommendations.append(
+                f"{severity}: High read latency ({os_metrics.read_latency_ms:.1f} ms). "
+                "Slow disk reads detected. Consider: 1) Faster storage (io1/io2), "
+                "2) Adding indexes to reduce disk reads, 3) Increasing buffer cache."
+            )
+        
+        # High disk write latency
+        if os_metrics.write_latency_ms and os_metrics.write_latency_ms > 10:
+            severity = "CRITICAL" if os_metrics.write_latency_ms > 20 else "WARNING"
+            recommendations.append(
+                f"{severity}: High write latency ({os_metrics.write_latency_ms:.1f} ms). "
+                "Slow disk writes detected. Consider: 1) Faster storage (io1/io2), "
+                "2) Batching commits, 3) Optimizing write-heavy queries."
+            )
+        
+        # High disk queue depth
+        if os_metrics.disk_queue_depth and os_metrics.disk_queue_depth > 2:
+            recommendations.append(
+                f"High disk queue depth ({os_metrics.disk_queue_depth:.1f}). "
+                "I/O bottleneck detected - queries are waiting for disk access. "
+                "Consider faster storage or optimizing I/O-intensive queries."
+            )
+        
+        # Temp blocks (queries spilling to disk)
+        if os_metrics.temp_blocks_written and os_metrics.temp_blocks_written > 1000:
+            recommendations.append(
+                f"High temp blocks written ({os_metrics.temp_blocks_written:.0f}). "
+                "Queries are spilling to disk due to insufficient memory. "
+                "Consider increasing work_mem parameter or optimizing queries to use less memory."
+            )
+        
+        # Swap usage (critical issue)
+        if os_metrics.swap_out_rate and os_metrics.swap_out_rate > 0:
+            recommendations.append(
+                "CRITICAL: System is swapping to disk. Severe memory pressure detected. "
+                "Immediate action required: 1) Increase instance size, "
+                "2) Reduce memory-intensive queries, 3) Optimize buffer cache settings."
+            )
+        
+        # Correlation: High I/O wait + High latency
+        if (os_metrics.cpu_wait and os_metrics.cpu_wait > 10 and
+            os_metrics.read_latency_ms and os_metrics.read_latency_ms > 10):
+            recommendations.append(
+                "Performance bottleneck identified: High I/O wait combined with high disk latency. "
+                "This indicates I/O-bound workload. Prioritize storage optimization."
+            )
+        
+        # High disk utilization
+        if os_metrics.disk_utilization_pct and os_metrics.disk_utilization_pct > 80:
+            recommendations.append(
+                f"High disk utilization ({os_metrics.disk_utilization_pct:.1f}%). "
+                "Disk is heavily utilized. Consider provisioning more IOPS or faster storage."
+            )
+        
+        return recommendations
 
 
 class QueryAnalyzer:
@@ -470,3 +560,81 @@ class QueryAnalyzer:
             List of problematic queries
         """
         return [q for q in queries if q.total_execution_time > threshold]
+
+    def analyze_os_metrics(self, os_metrics: 'OSMetrics') -> List[str]:
+        """
+        Analyze OS-level metrics and generate recommendations.
+        
+        Args:
+            os_metrics: OS metrics from Performance Insights
+            
+        Returns:
+            List of OS-specific recommendations
+        """
+        recommendations = []
+        
+        # High I/O wait
+        if os_metrics.cpu_wait and os_metrics.cpu_wait > 10:
+            recommendations.append(
+                f"High I/O wait detected ({os_metrics.cpu_wait:.1f}%). "
+                "Database is waiting for disk I/O. Check disk latency metrics and consider faster storage."
+            )
+        
+        # High disk read latency
+        if os_metrics.read_latency_ms and os_metrics.read_latency_ms > 10:
+            severity = "CRITICAL" if os_metrics.read_latency_ms > 20 else "WARNING"
+            recommendations.append(
+                f"{severity}: High read latency ({os_metrics.read_latency_ms:.1f} ms). "
+                "Slow disk reads detected. Consider: 1) Faster storage (io1/io2), "
+                "2) Adding indexes to reduce disk reads, 3) Increasing buffer cache."
+            )
+        
+        # High disk write latency
+        if os_metrics.write_latency_ms and os_metrics.write_latency_ms > 10:
+            severity = "CRITICAL" if os_metrics.write_latency_ms > 20 else "WARNING"
+            recommendations.append(
+                f"{severity}: High write latency ({os_metrics.write_latency_ms:.1f} ms). "
+                "Slow disk writes detected. Consider: 1) Faster storage (io1/io2), "
+                "2) Batching commits, 3) Optimizing write-heavy queries."
+            )
+        
+        # High disk queue depth
+        if os_metrics.disk_queue_depth and os_metrics.disk_queue_depth > 2:
+            recommendations.append(
+                f"High disk queue depth ({os_metrics.disk_queue_depth:.1f}). "
+                "I/O bottleneck detected - queries are waiting for disk access. "
+                "Consider faster storage or optimizing I/O-intensive queries."
+            )
+        
+        # Temp blocks (queries spilling to disk)
+        if os_metrics.temp_blocks_written and os_metrics.temp_blocks_written > 1000:
+            recommendations.append(
+                f"High temp blocks written ({os_metrics.temp_blocks_written:.0f}). "
+                "Queries are spilling to disk due to insufficient memory. "
+                "Consider increasing work_mem parameter or optimizing queries to use less memory."
+            )
+        
+        # Swap usage (critical issue)
+        if os_metrics.swap_out_rate and os_metrics.swap_out_rate > 0:
+            recommendations.append(
+                "CRITICAL: System is swapping to disk. Severe memory pressure detected. "
+                "Immediate action required: 1) Increase instance size, "
+                "2) Reduce memory-intensive queries, 3) Optimize buffer cache settings."
+            )
+        
+        # Correlation: High I/O wait + High latency
+        if (os_metrics.cpu_wait and os_metrics.cpu_wait > 10 and
+            os_metrics.read_latency_ms and os_metrics.read_latency_ms > 10):
+            recommendations.append(
+                "Performance bottleneck identified: High I/O wait combined with high disk latency. "
+                "This indicates I/O-bound workload. Prioritize storage optimization."
+            )
+        
+        # High disk utilization
+        if os_metrics.disk_utilization_pct and os_metrics.disk_utilization_pct > 80:
+            recommendations.append(
+                f"High disk utilization ({os_metrics.disk_utilization_pct:.1f}%). "
+                "Disk is heavily utilized. Consider provisioning more IOPS or faster storage."
+            )
+        
+        return recommendations
