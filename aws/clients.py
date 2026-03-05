@@ -267,6 +267,26 @@ class RDSClient(BaseAWSClient):
         
         return resource_id
     
+    def get_instance_engine(self, instance_id: str) -> str:
+        """
+        Get the database engine type for an instance.
+        
+        Args:
+            instance_id: RDS instance identifier
+            
+        Returns:
+            Engine string (e.g., 'aurora-postgresql', 'mysql', 'aurora-mysql')
+        """
+        instance = self.describe_instance(instance_id)
+        engine = instance.get('Engine')
+        
+        if not engine:
+            raise AWSClientError(
+                f"Could not retrieve engine type for instance {instance_id}"
+            )
+        
+        return engine
+    
     def get_db_parameter_value(
         self,
         parameter_group_name: str,

@@ -1,117 +1,98 @@
-# RDS Diagnostics Tool - Quick Start Guide
+# Quick Start Guide
 
-## Simple Commands (Using config.yaml)
+Get up and running in 5 minutes!
 
-The `config.yaml` file contains your default settings (profile: LT-DEV, region: ap-southeast-1), so you don't need to type them every time!
+---
 
-### 1. List All RDS Instances
+## Step 1: Install Python (if needed)
+
+Check if installed:
 ```bash
-rds-list.bat
-```
-Or:
-```bash
-rds-diag --config config.yaml list
+python --version
 ```
 
-### 2. Run Diagnostics on an Instance
-```bash
-rds-diagnose.bat ielts-idv-dev-v1-clusterinstance1
-```
-Or with custom time range:
-```bash
-rds-diagnose.bat ielts-idv-dev-v1-clusterinstance1 24h
-```
+Need Python 3.8 or higher? Download from: https://www.python.org/downloads/
 
-### 3. Generate a Report
-```bash
-rds-report.bat ielts-idv-dev-v1-clusterinstance1
-```
-Or with custom output file and time range:
-```bash
-rds-report.bat ielts-idv-dev-v1-clusterinstance1 my-report.txt 24h
-```
+---
 
-### 4. Check Permissions
+## Step 2: Install the Tool
+
 ```bash
-rds-check.bat
+cd rds-diagnostics-tool
+pip install -e .
 ```
 
 ---
 
-## Using Different Profiles
+## Step 3: Setup AWS Credentials
 
-To use a different AWS profile (e.g., LT-PRD), you have two options:
-
-### Option 1: Override on Command Line
+### Option A: With AWS CLI (Recommended)
 ```bash
-rds-diag --config config.yaml --profile LT-PRD list
+pip install awscli
+aws configure --profile YOUR-PROFILE
 ```
 
-### Option 2: Edit config.yaml
-Change the line:
-```yaml
-aws_profile: LT-DEV
+### Option B: Without AWS CLI
+Create `~/.aws/credentials`:
+```ini
+[YOUR-PROFILE]
+aws_access_key_id = YOUR_KEY
+aws_secret_access_key = YOUR_SECRET
 ```
-to:
-```yaml
-aws_profile: LT-PRD
+
+Create `~/.aws/config`:
+```ini
+[profile YOUR-PROFILE]
+region = ap-southeast-1
 ```
 
 ---
 
-## Common Use Cases
+## Step 4: Test It
 
-### Quick Health Check
 ```bash
-rds-diagnose.bat ielts-idv-dev-v1-clusterinstance1
-```
-
-### Generate Daily Report
-```bash
-rds-report.bat ielts-idv-dev-v1-clusterinstance1 daily-report.txt 24h
-```
-
-### Generate Weekly Report
-```bash
-rds-report.bat ielts-idv-dev-v1-clusterinstance1 weekly-report.txt 7d
-```
-
-### Management Report (JSON)
-```bash
-rds-diag --config config.yaml report --instance ielts-idv-dev-v1-clusterinstance1 --report-type management --format json --output management-report.json
+rds-diag --profile YOUR-PROFILE list
 ```
 
 ---
 
-## Tips
+## Step 5: Run Your First Report
 
-1. **Tab Completion**: After typing `rds-diagnose.bat `, you can start typing the instance name and press Tab to autocomplete (if your shell supports it)
-
-2. **Batch Processing**: Create a script to check multiple instances:
-   ```batch
-   @echo off
-   for %%i in (instance1 instance2 instance3) do (
-       rds-diagnose.bat %%i
-   )
-   ```
-
-3. **Scheduled Reports**: Use Windows Task Scheduler to run reports automatically
-
-4. **Different Environments**: Create separate config files:
-   - `config-dev.yaml` (LT-DEV)
-   - `config-prod.yaml` (LT-PRD)
-   
-   Then use: `rds-diag --config config-prod.yaml list`
+```bash
+rds-diag --profile YOUR-PROFILE report --instance YOUR-INSTANCE-ID --output report.txt
+```
 
 ---
 
-## Full Command Reference
+## Done! 🎉
 
-If you need the full syntax:
+### What's Next?
+
+- **Full details:** See `SETUP-GUIDE.md`
+- **Examples:** See `EXAMPLES.md`
+- **Credentials help:** See `AWS-CREDENTIALS-SETUP.md`
+- **Installation issues:** See `INSTALLATION.md`
+
+### Common Commands
+
 ```bash
-rds-diag --help
-rds-diag list --help
-rds-diag diagnose --help
-rds-diag report --help
-rds-diag check-permissions --help
+# List instances
+rds-diag --profile YOUR-PROFILE list
+
+# Quick check (1 hour)
+rds-diag --profile YOUR-PROFILE diagnose --instance INSTANCE-ID
+
+# Daily report (24 hours)
+rds-diag --profile YOUR-PROFILE report --instance INSTANCE-ID --time-range 24h --output daily.txt
+
+# Weekly report
+rds-diag --profile YOUR-PROFILE report --instance INSTANCE-ID --time-range 7d --output weekly.txt
 ```
+
+---
+
+## Need Help?
+
+Run: `rds-diag --help`
+
+Or check the documentation files in this directory.

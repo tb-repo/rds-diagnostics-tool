@@ -785,18 +785,23 @@ class PerformanceInsightsCollector:
         self,
         instance_id: str,
         time_range: TimeRange,
-        limit: int = 10
+        limit: int = 10,
+        sql_queries: Optional[List['SQLQuery']] = None
     ) -> List[TopDatabase]:
         """
         Collect top databases by load.
+        
+        For MySQL/MariaDB: Uses PI API db.name dimension group
+        For PostgreSQL: Extracts database names from SQL query text (fallback)
         
         Args:
             instance_id: RDS instance identifier
             time_range: Time range for database data
             limit: Maximum number of databases to return
+            sql_queries: Optional list of SQL queries (for PostgreSQL fallback)
             
         Returns:
-            List of TopDatabase objects
+            List of TopDatabase objects (empty list if not supported)
         """
         if not self.is_performance_insights_enabled(instance_id):
             logger.warning(
@@ -808,6 +813,28 @@ class PerformanceInsightsCollector:
             # Get resource ID for PI API
             resource_id = self.rds_client.get_instance_resource_id(instance_id)
             
+            # Get engine type to check if db.name is supported
+            engine = self.rds_client.get_instance_engine(instance_id)
+            
+            # db.name dimension group is not supported for Aurora PostgreSQL
+            # Use fallback method: extract from SQL queries
+            if 'postgres' in engine.lower():
+                logger.info(
+                    f"Using SQL query analysis for database load (db.name dimension not supported for {engine})"
+                )
+                
+                # If SQL queries were provided, extract databases from them
+                if sql_queries:
+                    databases = self.extract_databases_from_queries(sql_queries)
+                    return databases[:limit]
+                else:
+                    logger.info(
+                        "No SQL queries provided for database extraction. "
+                        "Top databases will not be available."
+                    )
+                    return []
+            
+            # For MySQL/MariaDB: Use PI API directly
             # Get top databases by load
             dimension_keys = self.pi_client.describe_dimension_keys(
                 resource_id=resource_id,
@@ -824,10 +851,6 @@ class PerformanceInsightsCollector:
             databases = []
             for key in dimension_keys[:limit]:
                 dimensions = key.get('Dimensions', {})
-                
-                # Debug: Log the actual dimensions structure
-                logger.debug(f"Top database dimension key structure: {key}")
-                logger.debug(f"Dimensions: {dimensions}")
                 
                 # Try multiple possible key names for database
                 db_name = (
@@ -847,15 +870,158 @@ class PerformanceInsightsCollector:
                     load_percentage=load_pct
                 ))
             
-            logger.info(f"Collected {len(databases)} top databases")
+            logger.info(f"Collected {len(databases)} top databases from PI API")
             return databases
             
         except AWSClientError as e:
-            logger.error(f"Failed to collect top databases: {e}")
+            # For PostgreSQL, try fallback if queries are available
+            if sql_queries and 'postgres' in engine.lower():
+                logger.info("Falling back to SQL query analysis for database load")
+                databases = self.extract_databases_from_queries(sql_queries)
+                return databases[:limit]
+            
+            # Log as info instead of error since this is expected for some engines
+            logger.info(
+                f"Top databases not available for {instance_id}: {e}. "
+                "This is normal for Aurora PostgreSQL."
+            )
             return []
         except Exception as e:
             logger.error(f"Unexpected error collecting top databases: {e}")
             return []
+    
+    def extract_databases_from_queries(
+        self,
+        queries: List['SQLQuery']
+    ) -> List[TopDatabase]:
+        """
+        Extract database information from SQL queries for engines that don't support db.name.
+        
+        This is a workaround for Aurora PostgreSQL where the db.name dimension is not available.
+        We parse the SQL query text to identify which databases are being accessed and
+        aggregate the load by database.
+        
+        Args:
+            queries: List of SQLQuery objects
+            
+        Returns:
+            List of TopDatabase objects sorted by load
+        """
+        import re
+        from collections import defaultdict
+        import time
+        
+        start_time = time.time()
+        
+        # Dictionary to accumulate load per database
+        db_loads = defaultdict(float)
+        extracted_count = 0
+        
+        for query in queries:
+            # Try to extract database name from SQL query text
+            db_name = self._extract_database_from_sql(query.query_text)
+            
+            # Accumulate load for this database
+            if db_name:
+                db_loads[db_name] += query.total_execution_time
+                extracted_count += 1
+        
+        elapsed = time.time() - start_time
+        
+        # If no databases found, return empty list
+        if not db_loads:
+            logger.info(
+                f"No database names could be extracted from SQL queries "
+                f"({len(queries)} queries analyzed in {elapsed:.2f}s)"
+            )
+            return []
+        
+        # Calculate total load for percentages
+        total_load = sum(db_loads.values())
+        
+        # Convert to TopDatabase objects
+        databases = []
+        for db_name, load in sorted(db_loads.items(), key=lambda x: x[1], reverse=True):
+            load_pct = (load / total_load * 100) if total_load > 0 else 0.0
+            databases.append(TopDatabase(
+                database_name=db_name,
+                total_load=load,
+                load_percentage=load_pct
+            ))
+        
+        logger.info(
+            f"Extracted {len(databases)} databases from {extracted_count}/{len(queries)} SQL queries "
+            f"(total load: {total_load:.2f} AAS, time: {elapsed:.2f}s)"
+        )
+        return databases
+    
+    def _extract_database_from_sql(self, sql_text: str) -> Optional[str]:
+        """
+        Extract database name from SQL query text.
+        
+        Supports various SQL patterns:
+        - FROM schema.table
+        - JOIN schema.table
+        - INSERT INTO schema.table
+        - UPDATE schema.table
+        - DELETE FROM schema.table
+        - USE database
+        - database.schema.table (3-part names)
+        - WHERE datname = 'database' (PostgreSQL specific)
+        
+        Args:
+            sql_text: SQL query text
+            
+        Returns:
+            Database/schema name or None if not found
+        """
+        import re
+        
+        if not sql_text:
+            return None
+        
+        # Convert to lowercase for case-insensitive matching
+        sql_lower = sql_text.lower()
+        
+        # Pattern 1: PostgreSQL specific - WHERE datname = 'database_name'
+        # Common in system queries
+        datname_match = re.search(r"datname\s*=\s*['\"]([a-z_][a-z0-9_]*)['\"]", sql_lower)
+        if datname_match:
+            db_name = datname_match.group(1)
+            # Filter out template databases
+            if db_name not in ['template0', 'template1', 'rdsadmin', 'postgres']:
+                return db_name
+        
+        # Pattern 2: USE database
+        use_match = re.search(r'\buse\s+([a-z_][a-z0-9_]*)', sql_lower)
+        if use_match:
+            return use_match.group(1)
+        
+        # Pattern 3: schema.table or database.schema.table
+        # Look for FROM, JOIN, INTO, UPDATE patterns
+        patterns = [
+            r'\bfrom\s+([a-z_][a-z0-9_]*)\.', 
+            r'\bjoin\s+([a-z_][a-z0-9_]*)\.', 
+            r'\binto\s+([a-z_][a-z0-9_]*)\.', 
+            r'\bupdate\s+([a-z_][a-z0-9_]*)\.', 
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, sql_lower)
+            if match:
+                schema_or_db = match.group(1)
+                # Filter out common PostgreSQL system schemas
+                if schema_or_db not in ['pg_catalog', 'information_schema', 'pg_temp', 'pg_toast']:
+                    return schema_or_db
+        
+        # Pattern 4: Look for database name in connection context
+        # Some queries include database name in comments
+        comment_match = re.search(r'/\*.*?database[:\s]+([a-z_][a-z0-9_]*).*?\*/', sql_lower)
+        if comment_match:
+            return comment_match.group(1)
+        
+        # If no database found, return None
+        return None
     
     def collect_top_users(
         self,

@@ -135,9 +135,11 @@ class RDSDiagnosticsApp:
                         instance_id,
                         time_range
                     )
+                    # Collect top databases - pass SQL queries for PostgreSQL fallback
                     top_databases = self.pi_collector.collect_top_databases(
                         instance_id,
-                        time_range
+                        time_range,
+                        sql_queries=pi_queries  # Pass queries for database extraction
                     )
                     top_users = self.pi_collector.collect_top_users(
                         instance_id,
